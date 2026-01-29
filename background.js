@@ -372,11 +372,52 @@ async function fetchPRDiff(prInfo, token) {
         if (changeType === 'Delete') {
           fileSection += '(File deleted)\n';
         } else {
-          // Fetch file content from source branch
-          const contentResponse = await fetch(
+          // Try fetching with repository name first, then with ID
+          let contentResponse = await fetch(
             `${apiBase}/git/repositories/${prInfo.repository}/items?path=${encodeURIComponent(path)}&versionDescriptor.version=${encodeURIComponent(sourceBranch)}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`,
             { headers }
           );
+
+          // If failed and we have repoId, try with ID
+          if (!contentResponse.ok && repoId) {
+            console.log('[AI Review] Retrying with repoId for:', path);
+            contentResponse = await fetch(
+              `${apiBase}/git/repositories/${repoId}/items?path=${encodeURIComponent(path)}&versionDescriptor.version=${encodeURIComponent(sourceBranch)}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`,
+              { headers }
+            );
+          }
+
+          // Try fetching as raw text if JSON fails
+          if (!contentResponse.ok) {
+            console.log('[AI Review] Trying raw text fetch for:', path, 'status:', contentResponse.status);
+            contentResponse = await fetch(
+              `${apiBase}/git/repositories/${prInfo.repository}/items?path=${encodeURIComponent(path)}&versionDescriptor.version=${encodeURIComponent(sourceBranch)}&versionDescriptor.versionType=branch&api-version=7.1`,
+              { 
+                headers: {
+                  ...headers,
+                  'Accept': 'text/plain'
+                }
+              }
+            );
+            
+            if (contentResponse.ok) {
+              const textContent = await contentResponse.text();
+              if (textContent) {
+                const truncated = textContent.substring(0, MAX_FILE_CHARS);
+                fileSection += '```\n' + truncated;
+                if (truncated.length < textContent.length) {
+                  fileSection += '\n... (truncated)';
+                }
+                fileSection += '\n```\n';
+                
+                if (totalChars + fileSection.length <= MAX_TOTAL_CHARS) {
+                  diffContent += fileSection;
+                  totalChars += fileSection.length;
+                }
+                continue;
+              }
+            }
+          }
 
           if (contentResponse.ok) {
             const contentData = await contentResponse.json();
@@ -445,7 +486,8 @@ async function fetchPRDiff(prInfo, token) {
               fileSection += '(Binary or empty file)\n';
             }
           } else {
-            fileSection += '(Could not fetch content)\n';
+            console.log('[AI Review] Failed to fetch content for:', path, 'status:', contentResponse.status);
+            fileSection += `(Could not fetch content - ${contentResponse.status})\n`;
           }
         }
 
