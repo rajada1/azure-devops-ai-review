@@ -178,45 +178,62 @@ function onProviderSelect(e) {
     html += `<div class="provider-instructions">${instructions}</div>`;
   }
 
-  // API Key field
-  if (provider.requiresApiKey) {
-    const keyLabel = providerId === 'github-copilot' ? 'GitHub Token' : 'API Key';
-    const keyPlaceholder = providerId === 'github-copilot' 
-      ? 'ghp_xxxxxxxxxxxx' 
-      : 'Enter API key';
+  // Check if provider has custom config fields
+  if (provider.configFields && provider.configFields.length > 0) {
+    // Use custom fields from provider
+    provider.configFields.forEach(field => {
+      const inputType = field.type === 'password' ? 'password' : 'text';
+      const required = field.required ? 'required' : '';
+      
+      html += `
+        <div class="form-field">
+          <label for="provider-${field.name}">${field.label}</label>
+          <input type="${inputType}" id="provider-${field.name}" placeholder="${field.placeholder || ''}" ${required}>
+        </div>
+      `;
+    });
+  } else {
+    // Default form fields
     
-    html += `
-      <div class="form-field">
-        <label for="provider-apikey">${keyLabel}</label>
-        <input type="password" id="provider-apikey" placeholder="${keyPlaceholder}" required>
-        ${providerId === 'github-copilot' ? '<button class="btn btn-small" id="btn-load-models" type="button">Load Models</button>' : ''}
-      </div>
-    `;
-  }
+    // API Key field
+    if (provider.requiresApiKey) {
+      const keyLabel = providerId === 'github-copilot' ? 'GitHub Token' : 'API Key';
+      const keyPlaceholder = providerId === 'github-copilot' 
+        ? 'ghp_xxxxxxxxxxxx' 
+        : 'Enter API key';
+      
+      html += `
+        <div class="form-field">
+          <label for="provider-apikey">${keyLabel}</label>
+          <input type="password" id="provider-apikey" placeholder="${keyPlaceholder}" required>
+          ${providerId === 'github-copilot' ? '<button class="btn btn-small" id="btn-load-models" type="button">Load Models</button>' : ''}
+        </div>
+      `;
+    }
 
-  // Base URL field
-  if (provider.supportsCustomUrl) {
-    html += `
-      <div class="form-field">
-        <label for="provider-url">Base URL ${provider.requiresApiKey ? '(optional)' : ''}</label>
-        <input type="text" id="provider-url" placeholder="Custom API endpoint">
-      </div>
-    `;
-  }
+    // Base URL field
+    if (provider.supportsCustomUrl) {
+      html += `
+        <div class="form-field">
+          <label for="provider-url">Base URL ${provider.requiresApiKey ? '(optional)' : ''}</label>
+          <input type="text" id="provider-url" placeholder="Custom API endpoint">
+        </div>
+      `;
+    }
 
-  // Model select - for GitHub Copilot, show placeholder until models are loaded
-  if (providerId === 'github-copilot') {
-    html += `
-      <div class="form-field" id="model-field">
-        <label for="provider-model">Model</label>
-        <select id="provider-model" disabled>
-          <option value="">Enter token and click "Load Models"</option>
-        </select>
-      </div>
-    `;
-  } else if (provider.availableModels.length > 0) {
-    html += `
-      <div class="form-field">
+    // Model select - for GitHub Copilot, show placeholder until models are loaded
+    if (providerId === 'github-copilot') {
+      html += `
+        <div class="form-field" id="model-field">
+          <label for="provider-model">Model</label>
+          <select id="provider-model" disabled>
+            <option value="">Enter token and click "Load Models"</option>
+          </select>
+        </div>
+      `;
+    } else if (provider.availableModels.length > 0) {
+      html += `
+        <div class="form-field">
         <label for="provider-model">Model</label>
         <select id="provider-model">
           ${provider.availableModels.map(m => `
@@ -225,6 +242,7 @@ function onProviderSelect(e) {
         </select>
       </div>
     `;
+    }
   }
 
   html += `
@@ -366,6 +384,21 @@ async function testNewProvider(providerId) {
 }
 
 function getProviderFormData(providerId) {
+  const provider = availableProviders.find(p => p.id === providerId);
+  
+  // Check if provider has custom config fields
+  if (provider?.configFields && provider.configFields.length > 0) {
+    const config = { id: providerId };
+    provider.configFields.forEach(field => {
+      const input = document.getElementById(`provider-${field.name}`);
+      if (input) {
+        config[field.name] = input.value || '';
+      }
+    });
+    return config;
+  }
+  
+  // Default form data
   return {
     id: providerId,
     apiKey: document.getElementById('provider-apikey')?.value || '',

@@ -38,7 +38,8 @@ export class ProviderFactory {
       description: Provider.description,
       requiresApiKey: Provider.requiresApiKey,
       supportsCustomUrl: Provider.supportsCustomUrl,
-      availableModels: Provider.availableModels
+      availableModels: Provider.availableModels,
+      configFields: Provider.configFields || null
     }));
   }
 
