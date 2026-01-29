@@ -60,7 +60,8 @@
         "content/*.css",
         "providers/*.js",
         "services/*.js",
-        "icons/*"
+        "icons/*",
+        "diff-viewer.html"
       ],
       "matches": ["https://dev.azure.com/*", "https://*.visualstudio.com/*"]
     }

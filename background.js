@@ -552,6 +552,23 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
       diffContent += `\n---\n... and ${changeEntries.length - MAX_FILES} more files not shown\n`;
     }
 
+    // Save diff to storage for the diff viewer page
+    try {
+      await chrome.storage.local.set({
+        lastDiff: diffContent,
+        lastPrInfo: {
+          title: prData.title,
+          description: prData.description,
+          sourceBranch,
+          targetBranch,
+          filesChanged: changeEntries.length,
+          prId: prInfo.pullRequestId
+        }
+      });
+    } catch (e) {
+      console.error('[AI Review] Failed to save diff to storage:', e);
+    }
+
     return {
       success: true,
       diff: diffContent,

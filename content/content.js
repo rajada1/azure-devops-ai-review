@@ -495,8 +495,9 @@ function renderReview(result) {
     </div>`;
   }
 
-  // Clear review button
+  // Action buttons
   html += `<div class="ai-review-actions">
+    <button class="ai-review-btn btn-secondary" id="view-diff-btn">🔍 View Raw Diff</button>
     <button class="ai-review-btn btn-secondary" id="clear-review-btn">🗑️ Clear Review</button>
   </div>`;
 
@@ -515,6 +516,15 @@ function renderReview(result) {
 
   // Add event listener for clear button
   document.getElementById('clear-review-btn')?.addEventListener('click', clearReview);
+
+  // Add event listener for view diff button
+  document.getElementById('view-diff-btn')?.addEventListener('click', openDiffViewer);
+}
+
+function openDiffViewer() {
+  // Open the diff viewer page in a new tab
+  const viewerUrl = chrome.runtime.getURL('diff-viewer.html');
+  window.open(viewerUrl, '_blank');
 }
 
 function handleFileClick(event) {

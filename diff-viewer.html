@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PR Diff Viewer - Azure DevOps AI Review</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      min-height: 100vh;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
+      color: white;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: white;
+      color: #0078d4;
+    }
+
+    .btn-primary:hover {
+      background: #f0f0f0;
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.2);
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .pr-info {
+      background: #252526;
+      padding: 16px 24px;
+      border-bottom: 1px solid #3c3c3c;
+    }
+
+    .pr-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+
+    .pr-meta {
+      font-size: 13px;
+      color: #888;
+      display: flex;
+      gap: 20px;
+    }
+
+    .pr-meta span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .diff-container {
+      padding: 16px 24px;
+    }
+
+    .file-section {
+      margin-bottom: 24px;
+      background: #252526;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #3c3c3c;
+    }
+
+    .file-header {
+      background: #2d2d2d;
+      padding: 12px 16px;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 13px;
+      color: #4fc3f7;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #3c3c3c;
+    }
+
+    .file-header .change-type {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .change-type.add {
+      background: #2e7d32;
+      color: #c8e6c9;
+    }
+
+    .change-type.edit {
+      background: #f57c00;
+      color: #ffe0b2;
+    }
+
+    .change-type.delete {
+      background: #c62828;
+      color: #ffcdd2;
+    }
+
+    .diff-content {
+      padding: 0;
+      overflow-x: auto;
+    }
+
+    .diff-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .diff-table tr {
+      border-bottom: 1px solid #2d2d2d;
+    }
+
+    .diff-table tr:last-child {
+      border-bottom: none;
+    }
+
+    .diff-table td {
+      padding: 0 12px;
+      vertical-align: top;
+    }
+
+    .line-num {
+      width: 50px;
+      text-align: right;
+      color: #6e6e6e;
+      user-select: none;
+      padding: 2px 8px;
+      border-right: 1px solid #3c3c3c;
+      background: #1e1e1e;
+    }
+
+    .line-content {
+      white-space: pre-wrap;
+      word-break: break-all;
+      padding: 2px 12px;
+    }
+
+    .line-add {
+      background: rgba(46, 160, 67, 0.15);
+    }
+
+    .line-add .line-content {
+      color: #98c379;
+    }
+
+    .line-add .line-num {
+      background: rgba(46, 160, 67, 0.2);
+      color: #98c379;
+    }
+
+    .line-del {
+      background: rgba(248, 81, 73, 0.15);
+    }
+
+    .line-del .line-content {
+      color: #e06c75;
+    }
+
+    .line-del .line-num {
+      background: rgba(248, 81, 73, 0.2);
+      color: #e06c75;
+    }
+
+    .line-context {
+      background: transparent;
+    }
+
+    .line-context .line-content {
+      color: #abb2bf;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #888;
+    }
+
+    .empty-state h2 {
+      margin-bottom: 12px;
+      color: #aaa;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 60px 20px;
+      color: #888;
+    }
+
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #3c3c3c;
+      border-top-color: #0078d4;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .stats {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+    }
+
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+    }
+
+    .stat.additions {
+      color: #98c379;
+    }
+
+    .stat.deletions {
+      color: #e06c75;
+    }
+
+    .stat.files {
+      color: #61afef;
+    }
+
+    /* Search */
+    .search-bar {
+      padding: 12px 24px;
+      background: #252526;
+      border-bottom: 1px solid #3c3c3c;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .search-input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #3c3c3c;
+      border-radius: 6px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      font-size: 13px;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: #0078d4;
+    }
+
+    .search-count {
+      color: #888;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🔍 PR Diff Viewer</h1>
+    <div class="header-actions">
+      <button class="btn btn-secondary" id="btn-copy">📋 Copy Raw</button>
+      <button class="btn btn-primary" id="btn-refresh">🔄 Refresh</button>
+    </div>
+  </div>
+
+  <div class="pr-info" id="pr-info">
+    <div class="pr-title" id="pr-title">Loading...</div>
+    <div class="pr-meta" id="pr-meta"></div>
+  </div>
+
+  <div class="search-bar">
+    <input type="text" class="search-input" id="search-input" placeholder="Search in diff...">
+    <span class="search-count" id="search-count"></span>
+  </div>
+
+  <div class="diff-container" id="diff-container">
+    <div class="loading">
+      <div class="loading-spinner"></div>
+      <p>Loading diff...</p>
+    </div>
+  </div>
+
+  <script>
+    let rawDiff = '';
+    let prData = null;
+
+    // Get diff data from storage
+    async function loadDiff() {
+      try {
+        const result = await chrome.storage.local.get(['lastDiff', 'lastPrInfo']);
+        
+        if (!result.lastDiff) {
+          showEmpty();
+          return;
+        }
+
+        rawDiff = result.lastDiff;
+        prData = result.lastPrInfo || {};
+
+        renderPrInfo();
+        renderDiff(rawDiff);
+      } catch (error) {
+        console.error('Failed to load diff:', error);
+        showError(error.message);
+      }
+    }
+
+    function renderPrInfo() {
+      const titleEl = document.getElementById('pr-title');
+      const metaEl = document.getElementById('pr-meta');
+
+      titleEl.textContent = prData.title || 'Pull Request Diff';
+
+      let metaHtml = '';
+      if (prData.sourceBranch && prData.targetBranch) {
+        metaHtml += `<span>🔀 ${prData.sourceBranch} → ${prData.targetBranch}</span>`;
+      }
+      if (prData.filesChanged) {
+        metaHtml += `<span>📁 ${prData.filesChanged} files</span>`;
+      }
+      metaEl.innerHTML = metaHtml;
+    }
+
+    function renderDiff(diffContent) {
+      const container = document.getElementById('diff-container');
+      
+      // Parse the diff content into files
+      const files = parseDiff(diffContent);
+
+      if (files.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <h2>No changes found</h2>
+            <p>The diff is empty or could not be parsed.</p>
+          </div>
+        `;
+        return;
+      }
+
+      let html = '';
+      let totalAdditions = 0;
+      let totalDeletions = 0;
+
+      for (const file of files) {
+        totalAdditions += file.additions;
+        totalDeletions += file.deletions;
+
+        html += `
+          <div class="file-section">
+            <div class="file-header">
+              <span>${file.path}</span>
+              <span class="change-type ${file.changeType.toLowerCase()}">${file.changeType}</span>
+            </div>
+            <div class="diff-content">
+              <table class="diff-table">
+                ${file.lines.map(line => `
+                  <tr class="line-${line.type}">
+                    <td class="line-num">${line.lineNum || ''}</td>
+                    <td class="line-content">${escapeHtml(line.content)}</td>
+                  </tr>
+                `).join('')}
+              </table>
+            </div>
+          </div>
+        `;
+      }
+
+      // Add stats to pr-meta
+      const metaEl = document.getElementById('pr-meta');
+      metaEl.innerHTML += `
+        <div class="stats">
+          <span class="stat additions">+${totalAdditions}</span>
+          <span class="stat deletions">-${totalDeletions}</span>
+          <span class="stat files">${files.length} files</span>
+        </div>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    function parseDiff(diffContent) {
+      const files = [];
+      const sections = diffContent.split(/\n## /);
+
+      for (const section of sections) {
+        if (!section.trim()) continue;
+
+        // Parse file header
+        const headerMatch = section.match(/^(Add|Edit|Delete|Rename|Change):\s*(.+)/);
+        if (!headerMatch) continue;
+
+        const changeType = headerMatch[1];
+        const filePath = headerMatch[2].trim();
+
+        // Parse lines
+        const lines = [];
+        let additions = 0;
+        let deletions = 0;
+
+        // Find code block content
+        const codeMatch = section.match(/```(?:diff)?\n([\s\S]*?)```/);
+        if (codeMatch) {
+          const codeLines = codeMatch[1].split('\n');
+          
+          for (const line of codeLines) {
+            // Parse line with number format: "L 42 + content" or "L 42 - content"
+            const lineMatch = line.match(/^L\s*(\d+)\s*([+-]?)\s*(.*)$/);
+            
+            if (lineMatch) {
+              const lineNum = lineMatch[1];
+              const symbol = lineMatch[2];
+              const content = lineMatch[3];
+              
+              if (symbol === '+') {
+                lines.push({ type: 'add', lineNum, content });
+                additions++;
+              } else if (symbol === '-') {
+                lines.push({ type: 'del', lineNum, content });
+                deletions++;
+              } else {
+                lines.push({ type: 'context', lineNum, content });
+              }
+            } else if (line.startsWith('+')) {
+              lines.push({ type: 'add', lineNum: '', content: line.substring(1).trim() });
+              additions++;
+            } else if (line.startsWith('-')) {
+              lines.push({ type: 'del', lineNum: '', content: line.substring(1).trim() });
+              deletions++;
+            } else if (line.trim()) {
+              lines.push({ type: 'context', lineNum: '', content: line });
+            }
+          }
+        }
+
+        if (lines.length > 0 || changeType === 'Delete') {
+          files.push({
+            path: filePath,
+            changeType,
+            lines,
+            additions,
+            deletions
+          });
+        }
+      }
+
+      return files;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function showEmpty() {
+      document.getElementById('pr-title').textContent = 'No Diff Available';
+      document.getElementById('diff-container').innerHTML = `
+        <div class="empty-state">
+          <h2>No diff data found</h2>
+          <p>Open a Pull Request in Azure DevOps and start a review to see the diff here.</p>
+        </div>
+      `;
+    }
+
+    function showError(message) {
+      document.getElementById('diff-container').innerHTML = `
+        <div class="empty-state">
+          <h2>Error loading diff</h2>
+          <p>${escapeHtml(message)}</p>
+        </div>
+      `;
+    }
+
+    // Search functionality
+    document.getElementById('search-input').addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase();
+      const rows = document.querySelectorAll('.diff-table tr');
+      let count = 0;
+
+      rows.forEach(row => {
+        const content = row.textContent.toLowerCase();
+        if (query && content.includes(query)) {
+          row.style.background = 'rgba(255, 213, 0, 0.2)';
+          count++;
+        } else {
+          row.style.background = '';
+        }
+      });
+
+      document.getElementById('search-count').textContent = query ? `${count} matches` : '';
+    });
+
+    // Copy raw diff
+    document.getElementById('btn-copy').addEventListener('click', () => {
+      navigator.clipboard.writeText(rawDiff).then(() => {
+        const btn = document.getElementById('btn-copy');
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => btn.textContent = '📋 Copy Raw', 2000);
+      });
+    });
+
+    // Refresh
+    document.getElementById('btn-refresh').addEventListener('click', loadDiff);
+
+    // Load on start
+    loadDiff();
+  </script>
+</body>
+</html>
