@@ -179,6 +179,23 @@
   background: #106ebe;
 }
 
+.ai-review-btn.secondary {
+  background: #f3f3f3;
+  color: #333;
+  border: 1px solid #ddd;
+}
+
+.ai-review-btn.secondary:hover {
+  background: #e5e5e5;
+}
+
+.ai-review-ready-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
 /* Review result */
 .ai-review-result {
   font-size: 13px;

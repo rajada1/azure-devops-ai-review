@@ -215,9 +215,14 @@ function createReviewPanel() {
       <div class="ai-review-content" id="ai-review-content">
         <div class="ai-review-ready">
           <p>Click <strong>Start Review</strong> to analyze this pull request with AI.</p>
-          <button class="ai-review-btn primary" id="ai-review-start">
-            Start Review
-          </button>
+          <div class="ai-review-ready-buttons">
+            <button class="ai-review-btn primary" id="ai-review-start">
+              🤖 Start Review
+            </button>
+            <button class="ai-review-btn secondary" id="ai-fetch-diff-only">
+              📋 Fetch Diff Only
+            </button>
+          </div>
         </div>
       </div>
       <div class="ai-review-chat" id="ai-review-chat">
@@ -236,6 +241,7 @@ function createReviewPanel() {
   document.getElementById('ai-review-toggle').addEventListener('click', togglePanel);
   document.getElementById('ai-review-refresh').addEventListener('click', startReview);
   document.getElementById('ai-review-start').addEventListener('click', startReview);
+  document.getElementById('ai-fetch-diff-only').addEventListener('click', fetchDiffOnly);
   document.getElementById('ai-review-ask').addEventListener('click', askQuestion);
   document.getElementById('ai-review-question').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') askQuestion();
@@ -565,6 +571,94 @@ function clearReview() {
   }
   
   updatePanelContent('ready');
+}
+
+/**
+ * Fetch diff only without AI analysis
+ */
+async function fetchDiffOnly() {
+  if (isReviewInProgress) return;
+  isReviewInProgress = true;
+
+  const prInfo = extractPRInfoFromUrl();
+  if (!prInfo) {
+    updatePanelContent('error', { error: 'Could not detect pull request information' });
+    isReviewInProgress = false;
+    return;
+  }
+
+  // Store for later use
+  currentPrInfo = prInfo;
+
+  // Expand panel if minimized
+  if (reviewPanel && reviewPanel.classList.contains('minimized')) {
+    togglePanel();
+  }
+
+  updatePanelContent('loading', { message: 'Fetching diff...' });
+
+  try {
+    // Get Azure token from background
+    const tokenResult = await chrome.runtime.sendMessage({ type: 'GET_AZURE_TOKEN' });
+    
+    if (!tokenResult.token) {
+      updatePanelContent('no-token');
+      isReviewInProgress = false;
+      return;
+    }
+
+    // Fetch PR diff via background script
+    const diffResult = await chrome.runtime.sendMessage({
+      type: 'FETCH_PR_DIFF',
+      prInfo,
+      token: tokenResult.token
+    });
+
+    if (!diffResult.success) {
+      throw new Error(diffResult.error || 'Failed to fetch PR diff');
+    }
+
+    patchContent = diffResult.diff;
+    
+    if (!patchContent || patchContent.trim() === '') {
+      throw new Error('No code changes found in this pull request');
+    }
+
+    // Show diff fetched successfully - open viewer
+    const content = document.getElementById('ai-review-content');
+    content.innerHTML = `
+      <div class="ai-review-section">
+        <h4>✅ Diff Fetched Successfully</h4>
+        <p>PR: <strong>${escapeHtml(diffResult.prTitle || prInfo.pullRequestId)}</strong></p>
+        <p>Files: <strong>${diffResult.filesChanged || 'Unknown'}</strong></p>
+        <div class="ai-review-actions" style="margin-top: 16px;">
+          <button class="ai-review-btn primary" id="btn-view-diff">🔍 View Diff</button>
+          <button class="ai-review-btn" id="btn-copy-diff">📋 Copy Diff</button>
+          <button class="ai-review-btn" id="btn-start-review-after">🤖 Analyze with AI</button>
+        </div>
+      </div>
+    `;
+
+    // Add event listeners
+    document.getElementById('btn-view-diff').addEventListener('click', openDiffViewer);
+    document.getElementById('btn-copy-diff').addEventListener('click', () => {
+      navigator.clipboard.writeText(patchContent).then(() => {
+        const btn = document.getElementById('btn-copy-diff');
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => btn.textContent = '📋 Copy Diff', 2000);
+      });
+    });
+    document.getElementById('btn-start-review-after').addEventListener('click', () => {
+      isReviewInProgress = false;
+      startReview();
+    });
+
+  } catch (error) {
+    console.error('[AI Review] Fetch diff error:', error);
+    updatePanelContent('error', { error: error.message });
+  }
+
+  isReviewInProgress = false;
 }
 
 async function startReview() {
