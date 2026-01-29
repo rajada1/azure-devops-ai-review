@@ -393,12 +393,14 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
       };
     }
 
-    // Token budget
-    const MAX_TOTAL_CHARS = 12000;
-    const MAX_FILE_CHARS = 2500;
-    const MAX_FILES = 10;
+    // Token budget - increased for larger PRs
+    const MAX_TOTAL_CHARS = 30000;  // Increased from 12000
+    const MAX_FILE_CHARS = 3000;    // Increased from 2500
+    const MAX_FILES = 25;           // Increased from 10
     
     let totalChars = diffContent.length;
+    let truncatedFiles = 0;
+    let skippedFiles = 0;
 
     // Prioritize code files
     const codeExtensions = ['.js', '.ts', '.py', '.cs', '.java', '.go', '.rs', '.cpp', '.c', '.jsx', '.tsx', '.vue', '.rb', '.php', '.swift', '.kt'];
@@ -536,7 +538,8 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
         }
 
         if (totalChars + fileSection.length > MAX_TOTAL_CHARS) {
-          fileSection = fileSection.substring(0, MAX_TOTAL_CHARS - totalChars - 50) + '\n...(truncated)\n```\n';
+          fileSection = fileSection.substring(0, MAX_TOTAL_CHARS - totalChars - 50) + '\n... (file truncated)\n';
+          truncatedFiles++;
         }
 
         diffContent += fileSection;
@@ -548,8 +551,18 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
       }
     }
 
-    if (changeEntries.length > MAX_FILES) {
-      diffContent += `\n---\n... and ${changeEntries.length - MAX_FILES} more files not shown\n`;
+    // Add summary of what was included/excluded
+    skippedFiles = changeEntries.length - filesToProcess.length;
+    
+    let summaryNotes = [];
+    if (skippedFiles > 0) {
+      summaryNotes.push(`${skippedFiles} files not shown (limit: ${MAX_FILES})`);
+    }
+    if (truncatedFiles > 0) {
+      summaryNotes.push(`${truncatedFiles} files were truncated`);
+    }
+    if (summaryNotes.length > 0) {
+      diffContent += `\n---\n⚠️ ${summaryNotes.join(', ')}\n`;
     }
 
     // Save diff to storage for the diff viewer page
@@ -562,6 +575,8 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
           sourceBranch,
           targetBranch,
           filesChanged: changeEntries.length,
+          filesIncluded: filesToProcess.length,
+          filesTruncated: truncatedFiles,
           prId: prInfo.pullRequestId
         }
       });

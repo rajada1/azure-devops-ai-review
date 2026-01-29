@@ -33,7 +33,15 @@ function renderPrInfo() {
     metaHtml += `<span>🔀 ${prData.sourceBranch} → ${prData.targetBranch}</span>`;
   }
   if (prData.filesChanged) {
-    metaHtml += `<span>📁 ${prData.filesChanged} files</span>`;
+    const included = prData.filesIncluded || prData.filesChanged;
+    if (included < prData.filesChanged) {
+      metaHtml += `<span>📁 ${included}/${prData.filesChanged} files (${prData.filesChanged - included} skipped)</span>`;
+    } else {
+      metaHtml += `<span>📁 ${prData.filesChanged} files</span>`;
+    }
+  }
+  if (prData.filesTruncated > 0) {
+    metaHtml += `<span style="color: #f0ad4e;">⚠️ ${prData.filesTruncated} truncated</span>`;
   }
   metaEl.innerHTML = metaHtml;
 }
@@ -97,59 +105,51 @@ function renderDiff(diffContent) {
 
 function parseDiff(diffContent) {
   const files = [];
-  const sections = diffContent.split(/\n## /);
+  
+  // Split by file sections (## edit:, ## Add:, etc.)
+  const sections = diffContent.split(/\n##\s+/);
 
   for (const section of sections) {
     if (!section.trim()) continue;
 
-    // Parse file header
-    const headerMatch = section.match(/^(Add|Edit|Delete|Rename|Change):\s*(.+)/);
+    // Parse file header - format: "edit: /path/to/file" or "Add: /path/to/file"
+    const headerMatch = section.match(/^(add|edit|delete|rename|change):\s*(.+?)(?:\n|$)/i);
     if (!headerMatch) continue;
 
-    const changeType = headerMatch[1];
+    const changeType = headerMatch[1].charAt(0).toUpperCase() + headerMatch[1].slice(1).toLowerCase();
     const filePath = headerMatch[2].trim();
 
-    // Parse lines
+    // Parse lines - they come after the header, NOT in code blocks
     const lines = [];
     let additions = 0;
     let deletions = 0;
 
-    // Find code block content
-    const codeMatch = section.match(/```(?:diff)?\n([\s\S]*?)```/);
-    if (codeMatch) {
-      const codeLines = codeMatch[1].split('\n');
+    // Get all lines after the header
+    const contentLines = section.split('\n').slice(1);
+    
+    for (const line of contentLines) {
+      // Skip empty lines and truncation notices
+      if (!line.trim() || line.includes('(diff truncated)') || line.includes('(truncated)')) continue;
       
-      for (const line of codeLines) {
-        // Parse line with number format: "L 42 + content" or "L 42 - content"
-        const lineMatch = line.match(/^L\s*(\d+)\s*([+-]?)\s*(.*)$/);
+      // Parse line with format: "L 42 + content" or "L 42 - content"
+      const lineMatch = line.match(/^L\s*(\d+)\s*([+-])\s*(.*)$/);
+      
+      if (lineMatch) {
+        const lineNum = lineMatch[1];
+        const symbol = lineMatch[2];
+        const content = lineMatch[3];
         
-        if (lineMatch) {
-          const lineNum = lineMatch[1];
-          const symbol = lineMatch[2];
-          const content = lineMatch[3];
-          
-          if (symbol === '+') {
-            lines.push({ type: 'add', lineNum, content });
-            additions++;
-          } else if (symbol === '-') {
-            lines.push({ type: 'del', lineNum, content });
-            deletions++;
-          } else {
-            lines.push({ type: 'context', lineNum, content });
-          }
-        } else if (line.startsWith('+')) {
-          lines.push({ type: 'add', lineNum: '', content: line.substring(1).trim() });
+        if (symbol === '+') {
+          lines.push({ type: 'add', lineNum, content });
           additions++;
-        } else if (line.startsWith('-')) {
-          lines.push({ type: 'del', lineNum: '', content: line.substring(1).trim() });
+        } else if (symbol === '-') {
+          lines.push({ type: 'del', lineNum, content });
           deletions++;
-        } else if (line.trim()) {
-          lines.push({ type: 'context', lineNum: '', content: line });
         }
       }
     }
 
-    if (lines.length > 0 || changeType === 'Delete') {
+    if (lines.length > 0 || changeType.toLowerCase() === 'delete') {
       files.push({
         path: filePath,
         changeType,
