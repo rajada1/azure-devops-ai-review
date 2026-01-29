@@ -10,7 +10,7 @@ export class ApiFreeProvider extends BaseProvider {
   static displayName = 'API Free (Claude & Others)';
   static description = 'Free API access to Claude and other AI models';
   static requiresApiKey = true;
-  static supportsCustomUrl = false;
+  static supportsCustomUrl = true;
   static availableModels = [
     'anthropic/claude-sonnet-4.5',
     'anthropic/claude-sonnet-4',
@@ -27,6 +27,14 @@ export class ApiFreeProvider extends BaseProvider {
       type: 'password',
       required: true,
       placeholder: 'Enter your API Free key'
+    },
+    {
+      name: 'baseUrl',
+      label: 'API URL',
+      type: 'text',
+      required: false,
+      default: 'https://api.apifree.ai/v1',
+      placeholder: 'https://api.apifree.ai/v1'
     },
     {
       name: 'model',
@@ -58,7 +66,7 @@ export class ApiFreeProvider extends BaseProvider {
     super(config);
     this.id = 'api-free';
     this.name = 'API Free';
-    this.baseUrl = 'https://api.apifree.ai/v1';
+    this.baseUrl = config.baseUrl || 'https://api.apifree.ai/v1';
   }
 
   /**
@@ -77,6 +85,13 @@ export class ApiFreeProvider extends BaseProvider {
   }
 
   /**
+   * Get the base URL (from config or default)
+   */
+  getBaseUrl() {
+    return this.config.baseUrl || 'https://api.apifree.ai/v1';
+  }
+
+  /**
    * Validate the provider configuration
    */
   async validateConfig() {
@@ -90,13 +105,21 @@ export class ApiFreeProvider extends BaseProvider {
    * Test the connection
    */
   async testConnection() {
+    const baseUrl = this.getBaseUrl();
+    
     try {
-      const response = await fetch(`${this.baseUrl}/models`, {
-        method: 'GET',
+      // Try a simple completion request to test the connection
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.apiKey}`,
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+          model: this.config.model || 'anthropic/claude-sonnet-4.5',
+          messages: [{ role: 'user', content: 'Hi' }],
+          max_tokens: 10
+        })
       });
 
       if (!response.ok) {
@@ -118,6 +141,7 @@ export class ApiFreeProvider extends BaseProvider {
    * Send a code review request
    */
   async reviewCode(patchContent, options = {}) {
+    const baseUrl = this.getBaseUrl();
     const model = this.config.model || 'anthropic/claude-sonnet-4.5';
     const maxTokens = this.config.maxTokens || 8192;
 
@@ -129,7 +153,7 @@ export class ApiFreeProvider extends BaseProvider {
     ];
 
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.apiKey}`,
@@ -179,6 +203,7 @@ export class ApiFreeProvider extends BaseProvider {
    * Chat with the AI about the code
    */
   async chat(patchContent, conversationHistory, options = {}) {
+    const baseUrl = this.getBaseUrl();
     const model = this.config.model || 'anthropic/claude-sonnet-4.5';
     const maxTokens = this.config.maxTokens || 8192;
 
@@ -195,7 +220,7 @@ Answer questions about this code. Be concise but thorough. If asked about specif
     ];
 
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.apiKey}`,
