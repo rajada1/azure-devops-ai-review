@@ -19,13 +19,18 @@
 }
 
 .ai-review-panel.minimized {
-  width: 220px;
-  max-height: 48px;
+  width: 250px;
+  max-height: 52px;
   cursor: pointer;
 }
 
+.ai-review-panel.minimized .ai-review-header {
+  border-radius: 12px;
+  box-shadow: none;
+}
+
 .ai-review-panel.minimized .ai-review-body {
-  display: none;
+  display: none !important;
 }
 
 .ai-review-panel.hidden {
@@ -41,10 +46,6 @@
   background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
   color: white;
   border-radius: 12px 12px 0 0;
-}
-
-.ai-review-panel.minimized .ai-review-header {
-  border-radius: 12px;
 }
 
 .ai-review-title {

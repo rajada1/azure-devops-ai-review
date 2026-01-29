@@ -735,7 +735,7 @@ async function handleAddComment(event) {
         type: 'POST_PR_COMMENT',
         prInfo: currentPrInfo,
         token: tokenResult.token,
-        comment: `🤖 **AI Review ${type.charAt(0).toUpperCase() + type.slice(1)}:**\n\n${commentText}`,
+        comment: file && !line ? `📍 **${file}**\n\n${commentText}` : commentText,
         filePath: file || null,
         line: line || null
       });
