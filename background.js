@@ -229,53 +229,41 @@ async function fetchPRDiff(prInfo, token) {
 
     console.log('[AI Review] PR branches:', { sourceBranch, targetBranch });
 
-    // Method 1: Get diff between branches directly
-    const diffResponse = await fetch(
-      `${apiBase}/git/repositories/${prInfo.repository}/diffs/commits?baseVersion=${encodeURIComponent(targetBranch)}&baseVersionType=branch&targetVersion=${encodeURIComponent(sourceBranch)}&targetVersionType=branch&api-version=7.1`,
+    let changeEntries = [];
+
+    // Method 1: Use iterations API (most accurate for PR-specific changes)
+    console.log('[AI Review] Trying iterations API...');
+    
+    const iterResponse = await fetch(
+      `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations?api-version=7.1`,
       { headers }
     );
 
-    let changeEntries = [];
+    if (iterResponse.ok) {
+      const iterData = await iterResponse.json();
+      const iterations = iterData.value || [];
+      console.log('[AI Review] Found', iterations.length, 'iterations');
 
-    if (diffResponse.ok) {
-      const diffData = await diffResponse.json();
-      changeEntries = diffData.changes || [];
-      console.log('[AI Review] Diff API returned', changeEntries.length, 'changes');
-    }
+      if (iterations.length > 0) {
+        const latestIteration = iterations[iterations.length - 1];
+        
+        // Get changes for the latest iteration (comparing to base)
+        const changesResponse = await fetch(
+          `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations/${latestIteration.id}/changes?api-version=7.1`,
+          { headers }
+        );
 
-    // Method 2: Fallback to iterations if diff API fails
-    if (changeEntries.length === 0) {
-      console.log('[AI Review] Trying iterations API...');
-      
-      const iterResponse = await fetch(
-        `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations?api-version=7.1`,
-        { headers }
-      );
-
-      if (iterResponse.ok) {
-        const iterData = await iterResponse.json();
-        const iterations = iterData.value || [];
-
-        if (iterations.length > 0) {
-          const latestIteration = iterations[iterations.length - 1];
-          
-          // Don't use $compareTo if there's only 1 iteration
-          const changesUrl = iterations.length === 1
-            ? `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations/${latestIteration.id}/changes?api-version=7.1`
-            : `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations/${latestIteration.id}/changes?$compareTo=0&api-version=7.1`;
-
-          const changesResponse = await fetch(changesUrl, { headers });
-
-          if (changesResponse.ok) {
-            const changesData = await changesResponse.json();
-            changeEntries = changesData.changeEntries || [];
-            console.log('[AI Review] Iterations API returned', changeEntries.length, 'changes');
-          }
+        if (changesResponse.ok) {
+          const changesData = await changesResponse.json();
+          changeEntries = changesData.changeEntries || [];
+          console.log('[AI Review] Iterations API returned', changeEntries.length, 'changes');
+        } else {
+          console.log('[AI Review] Iterations changes failed:', changesResponse.status);
         }
       }
     }
 
-    // Method 3: Get commits and their changes
+    // Method 2: Get commits and their changes (fallback)
     if (changeEntries.length === 0) {
       console.log('[AI Review] Trying commits API...');
       
@@ -287,9 +275,10 @@ async function fetchPRDiff(prInfo, token) {
       if (commitsResponse.ok) {
         const commitsData = await commitsResponse.json();
         const commits = commitsData.value || [];
+        console.log('[AI Review] Found', commits.length, 'commits in PR');
 
-        // Get changes from first commit (usually has all PR changes)
-        for (const commit of commits.slice(0, 3)) {
+        // Get changes from each commit in the PR
+        for (const commit of commits) {
           const commitChangesResponse = await fetch(
             `${apiBase}/git/repositories/${prInfo.repository}/commits/${commit.commitId}/changes?api-version=7.1`,
             { headers }
@@ -309,6 +298,22 @@ async function fetchPRDiff(prInfo, token) {
           }
         }
         console.log('[AI Review] Commits API returned', changeEntries.length, 'unique changes');
+      }
+    }
+
+    // Method 3: Last resort - diff between branches (may include unrelated changes)
+    if (changeEntries.length === 0) {
+      console.log('[AI Review] Trying branch diff API (last resort)...');
+      
+      const diffResponse = await fetch(
+        `${apiBase}/git/repositories/${prInfo.repository}/diffs/commits?baseVersion=${encodeURIComponent(targetBranch)}&baseVersionType=branch&targetVersion=${encodeURIComponent(sourceBranch)}&targetVersionType=branch&api-version=7.1`,
+        { headers }
+      );
+
+      if (diffResponse.ok) {
+        const diffData = await diffResponse.json();
+        changeEntries = diffData.changes || [];
+        console.log('[AI Review] Branch diff API returned', changeEntries.length, 'changes (may include unrelated)');
       }
     }
 
