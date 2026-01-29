@@ -53,12 +53,23 @@ function renderDiff(diffContent) {
   const files = parseDiff(diffContent);
 
   if (files.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <h2>No changes found</h2>
-        <p>The diff is empty or could not be parsed.</p>
-      </div>
-    `;
+    // Check if there's raw content but parsing failed
+    if (diffContent && diffContent.length > 100) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <h2>Diff loaded but parsing failed</h2>
+          <p>The diff has ${diffContent.length} characters but could not be parsed into files.</p>
+          <p>Click "Copy Raw" to see the raw content.</p>
+        </div>
+      `;
+    } else {
+      container.innerHTML = `
+        <div class="empty-state">
+          <h2>No changes found</h2>
+          <p>The diff is empty or could not be parsed.</p>
+        </div>
+      `;
+    }
     return;
   }
 
@@ -90,15 +101,24 @@ function renderDiff(diffContent) {
     `;
   }
 
-  // Add stats to pr-meta
+  // Update stats - use actual parsed files count
   const metaEl = document.getElementById('pr-meta');
-  metaEl.innerHTML += `
-    <div class="stats">
-      <span class="stat additions">+${totalAdditions}</span>
-      <span class="stat deletions">-${totalDeletions}</span>
-      <span class="stat files">${files.length} files</span>
-    </div>
-  `;
+  const totalFilesInPR = prData.filesChanged || files.length;
+  const filesInDiff = files.length;
+  
+  let statsHtml = `<div class="stats">`;
+  statsHtml += `<span class="stat additions">+${totalAdditions}</span>`;
+  statsHtml += `<span class="stat deletions">-${totalDeletions}</span>`;
+  
+  if (filesInDiff < totalFilesInPR) {
+    statsHtml += `<span class="stat files">${filesInDiff}/${totalFilesInPR} files</span>`;
+    statsHtml += `<span class="stat" style="color: #f0ad4e;">⚠️ ${totalFilesInPR - filesInDiff} not included</span>`;
+  } else {
+    statsHtml += `<span class="stat files">${filesInDiff} files</span>`;
+  }
+  statsHtml += `</div>`;
+  
+  metaEl.innerHTML += statsHtml;
 
   container.innerHTML = html;
 }
