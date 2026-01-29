@@ -512,6 +512,14 @@ function getProviderInstructions(providerId) {
       </p>
       <p>Required scope: <code>models:read</code></p>
     `,
+    'azure-openai': `
+      <p><strong>Azure OpenAI Service</strong></p>
+      <p>Supports Model Router and custom deployments.</p>
+      <p>Endpoint format: <code>https://YOUR-RESOURCE.openai.azure.com/openai/v1/</code></p>
+      <p>Get your API key from 
+        <a href="https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/OpenAI" target="_blank">Azure Portal</a>
+      </p>
+    `,
     'openai': `
       <p>Get your API key at 
         <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a>

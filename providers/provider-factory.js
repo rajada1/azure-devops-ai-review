@@ -3,6 +3,7 @@ import { AnthropicProvider } from './anthropic.js';
 import { GeminiProvider } from './gemini.js';
 import { GitHubCopilotProvider } from './github-copilot.js';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
+import { AzureOpenAIProvider } from './azure-openai.js';
 
 /**
  * Provider Factory
@@ -11,6 +12,7 @@ import { OpenAICompatibleProvider } from './openai-compatible.js';
 export class ProviderFactory {
   static providers = {
     [GitHubCopilotProvider.id]: GitHubCopilotProvider,
+    [AzureOpenAIProvider.id]: AzureOpenAIProvider,
     [OpenAIProvider.id]: OpenAIProvider,
     [AnthropicProvider.id]: AnthropicProvider,
     [GeminiProvider.id]: GeminiProvider,
