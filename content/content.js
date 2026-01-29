@@ -7,6 +7,7 @@ let isReviewInProgress = false;
 let patchContent = null;
 let conversationHistory = [];
 let currentPrInfo = null;
+let lastReviewResult = null; // Keep review state
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
@@ -197,7 +198,14 @@ function updatePanelContent(state, data = null) {
   if (!content) return;
 
   switch (state) {
+    case 'idle':
     case 'ready':
+      // If we have a saved review, show it instead
+      if (lastReviewResult && state === 'idle') {
+        renderReview(lastReviewResult);
+        if (chat) chat.style.display = 'flex';
+        return;
+      }
       content.innerHTML = `
         <div class="ai-review-ready">
           <p>Click <strong>Start Review</strong> to analyze this pull request with AI.</p>
@@ -300,6 +308,13 @@ function renderReview(result) {
     <p>${escapeHtml(review.summary || 'No summary available')}</p>
   </div>`;
 
+  // Helper to create file link
+  const createFileLink = (file, line) => {
+    if (!file) return '';
+    const lineStr = line ? `:${line}` : '';
+    return `<span class="file-link" data-file="${escapeHtml(file)}" data-line="${line || ''}" title="Click to go to file">📄 ${escapeHtml(file)}${lineStr}</span>`;
+  };
+
   // Issues
   if (review.issues?.length > 0) {
     html += `<div class="ai-review-section">
@@ -311,7 +326,7 @@ function renderReview(result) {
               <span class="badge ${issue.severity || 'medium'}">${issue.severity || 'info'}</span>
               <span class="issue-text">${escapeHtml(issue.description || '')}</span>
             </div>
-            ${issue.file ? `<span class="file">${escapeHtml(issue.file)}${issue.line ? `:${issue.line}` : ''}</span>` : ''}
+            ${createFileLink(issue.file, issue.line)}
             <button class="ai-review-btn-small add-comment-btn" 
                     data-type="issue" 
                     data-file="${escapeHtml(issue.file || '')}" 
@@ -337,6 +352,7 @@ function renderReview(result) {
               <span class="issue-text">${escapeHtml(sec.description || '')}</span>
             </div>
             ${sec.recommendation ? `<div class="recommendation">💡 ${escapeHtml(sec.recommendation)}</div>` : ''}
+            ${createFileLink(sec.file, sec.line)}
             <button class="ai-review-btn-small add-comment-btn" 
                     data-type="security" 
                     data-file="${escapeHtml(sec.file || '')}" 
@@ -361,7 +377,7 @@ function renderReview(result) {
               <span class="badge suggestion">${sug.type || 'tip'}</span>
               <span class="issue-text">${escapeHtml(sug.description || '')}</span>
             </div>
-            ${sug.file ? `<span class="file">${escapeHtml(sug.file)}${sug.line ? `:${sug.line}` : ''}</span>` : ''}
+            ${createFileLink(sug.file, sug.line)}
             <button class="ai-review-btn-small add-comment-btn" 
                     data-type="suggestion" 
                     data-file="${escapeHtml(sug.file || '')}" 
@@ -385,6 +401,11 @@ function renderReview(result) {
     </div>`;
   }
 
+  // Clear review button
+  html += `<div class="ai-review-actions">
+    <button class="ai-review-btn btn-secondary" id="clear-review-btn">🗑️ Clear Review</button>
+  </div>`;
+
   html += `</div>`;
   content.innerHTML = html;
 
@@ -392,6 +413,45 @@ function renderReview(result) {
   content.querySelectorAll('.add-comment-btn').forEach(btn => {
     btn.addEventListener('click', handleAddComment);
   });
+
+  // Add event listeners for file links
+  content.querySelectorAll('.file-link').forEach(link => {
+    link.addEventListener('click', handleFileClick);
+  });
+
+  // Add event listener for clear button
+  document.getElementById('clear-review-btn')?.addEventListener('click', clearReview);
+}
+
+function handleFileClick(event) {
+  const file = event.target.dataset.file;
+  const line = event.target.dataset.line;
+  
+  if (!file || !currentPrInfo) return;
+
+  // Build URL to the file in the PR
+  let baseUrl;
+  if (currentPrInfo.hostname && currentPrInfo.hostname.includes('visualstudio.com')) {
+    baseUrl = `https://${currentPrInfo.hostname}`;
+  } else {
+    baseUrl = `https://dev.azure.com/${currentPrInfo.organization}`;
+  }
+
+  // Azure DevOps PR file URL format
+  let fileUrl = `${baseUrl}/${currentPrInfo.project}/_git/${currentPrInfo.repository}/pullrequest/${currentPrInfo.pullRequestId}?path=${encodeURIComponent(file)}`;
+  
+  if (line) {
+    fileUrl += `&line=${line}&lineEnd=${line}&lineStartColumn=1&lineEndColumn=1000&lineStyle=plain`;
+  }
+
+  // Open in new tab to preserve review state
+  window.open(fileUrl, '_blank');
+}
+
+function clearReview() {
+  lastReviewResult = null;
+  conversationHistory = [];
+  updatePanelContent('idle');
 }
 
 async function startReview() {
@@ -459,6 +519,7 @@ async function startReview() {
         updatePanelContent('error', { error: result.error });
       }
     } else {
+      lastReviewResult = result; // Save for state persistence
       updatePanelContent('review', result);
       conversationHistory = [];
     }

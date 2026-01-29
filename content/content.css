@@ -266,6 +266,23 @@
   color: #888;
   font-family: monospace;
   width: 100%;
+  word-break: break-all;
+  overflow-wrap: break-word;
+}
+
+.ai-review-list .file-link {
+  font-size: 11px;
+  color: #0078d4;
+  font-family: monospace;
+  width: 100%;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.ai-review-list .file-link:hover {
+  color: #005a9e;
 }
 
 .ai-review-list .recommendation {
@@ -594,4 +611,30 @@
     border-color: #555;
     color: #e0e0e0;
   }
+
+  .ai-review-list .file-link {
+    color: #4da3ff;
+  }
+
+  .ai-review-list .file-link:hover {
+    color: #7dbfff;
+  }
+}
+
+/* Review actions */
+.ai-review-actions {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #eee;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-secondary {
+  background: #f0f0f0 !important;
+  color: #666 !important;
+}
+
+.btn-secondary:hover {
+  background: #e0e0e0 !important;
 }
