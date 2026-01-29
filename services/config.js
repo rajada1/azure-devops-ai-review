@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
   PROVIDERS: 'providers',           // Array of configured providers
   ACTIVE_PROVIDER: 'activeProvider', // Currently selected provider ID
   AZURE_TOKEN: 'azureDevOpsToken',  // Azure DevOps PAT
+  GITHUB_TOKEN: 'githubToken',      // GitHub Personal Access Token
   SETTINGS: 'settings'              // General settings
 };
 
@@ -109,6 +110,24 @@ export class ConfigService {
    */
   static async saveAzureToken(token) {
     await chrome.storage.local.set({ [STORAGE_KEYS.AZURE_TOKEN]: token });
+  }
+
+  /**
+   * Get GitHub Personal Access Token
+   * @returns {Promise<string|null>}
+   */
+  static async getGitHubToken() {
+    const result = await chrome.storage.local.get(STORAGE_KEYS.GITHUB_TOKEN);
+    return result[STORAGE_KEYS.GITHUB_TOKEN] || null;
+  }
+
+  /**
+   * Save GitHub Personal Access Token
+   * @param {string} token
+   * @returns {Promise<void>}
+   */
+  static async saveGitHubToken(token) {
+    await chrome.storage.local.set({ [STORAGE_KEYS.GITHUB_TOKEN]: token });
   }
 
   /**

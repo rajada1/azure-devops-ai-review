@@ -58,6 +58,16 @@ async function handleMessage(message, sender) {
         token: await ConfigService.getAzureToken()
       };
 
+    case 'GET_GITHUB_TOKEN':
+      return {
+        success: true,
+        token: await ConfigService.getGitHubToken()
+      };
+
+    case 'SAVE_GITHUB_TOKEN':
+      await ConfigService.saveGitHubToken(message.token);
+      return { success: true };
+
     case 'UPDATE_SETTINGS':
       await ConfigService.updateSettings(message.settings);
       return { success: true };

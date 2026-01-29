@@ -31,6 +31,12 @@ async function loadData() {
       document.getElementById('azure-token').value = '••••••••••••••••';
     }
 
+    // Load GitHub token
+    const githubTokenResult = await chrome.runtime.sendMessage({ type: 'GET_GITHUB_TOKEN' });
+    if (githubTokenResult.token) {
+      document.getElementById('github-token').value = '••••••••••••••••';
+    }
+
     // Load language setting
     if (settings.language) {
       document.getElementById('review-language').value = settings.language;
@@ -67,6 +73,9 @@ function setupEventListeners() {
 
   // Save Azure token
   document.getElementById('btn-save-token').addEventListener('click', saveAzureToken);
+
+  // Save GitHub token
+  document.getElementById('btn-save-github-token').addEventListener('click', saveGitHubToken);
 
   // Language change
   document.getElementById('review-language').addEventListener('change', (e) => {
@@ -224,9 +233,28 @@ function onProviderSelect(e) {
   document.getElementById('btn-add-provider').addEventListener('click', () => addProvider(providerId));
   document.getElementById('btn-test-provider').addEventListener('click', () => testNewProvider(providerId));
   
-  // GitHub Copilot: load models button
+  // GitHub Copilot: load saved token and setup load models button
   if (providerId === 'github-copilot') {
     document.getElementById('btn-load-models').addEventListener('click', loadGitHubModels);
+    
+    // Try to load saved GitHub token
+    loadSavedGitHubToken();
+  }
+}
+
+async function loadSavedGitHubToken() {
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'GET_GITHUB_TOKEN' });
+    if (result.token) {
+      const tokenInput = document.getElementById('provider-apikey');
+      if (tokenInput) {
+        tokenInput.value = result.token;
+        // Auto-load models if token exists
+        loadGitHubModels();
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load saved GitHub token:', error);
   }
 }
 
@@ -416,6 +444,27 @@ async function saveAzureToken() {
     });
     input.value = '••••••••••••••••';
     showToast('Token saved', 'success');
+  } catch (error) {
+    showToast('Failed to save token', 'error');
+  }
+}
+
+async function saveGitHubToken() {
+  const input = document.getElementById('github-token');
+  const token = input.value;
+
+  if (!token || token === '••••••••••••••••') {
+    showToast('Please enter a token', 'error');
+    return;
+  }
+
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'SAVE_GITHUB_TOKEN',
+      token
+    });
+    input.value = '••••••••••••••••';
+    showToast('GitHub token saved', 'success');
   } catch (error) {
     showToast('Failed to save token', 'error');
   }

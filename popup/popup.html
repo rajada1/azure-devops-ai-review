@@ -78,6 +78,21 @@
       </div>
 
       <div class="settings-group">
+        <h3>GitHub Token</h3>
+        <div class="form-field">
+          <label for="github-token">Personal Access Token</label>
+          <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxx">
+          <button class="btn btn-small" id="btn-save-github-token">Save</button>
+          <p class="help-text">
+            Required for GitHub Copilot models.
+            <a href="https://github.com/settings/tokens" target="_blank">
+              Create a token
+            </a> with <code>copilot</code> scope.
+          </p>
+        </div>
+      </div>
+
+      <div class="settings-group">
         <h3>Review Language</h3>
         <div class="form-field">
           <select id="review-language">
