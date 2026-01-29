@@ -10,7 +10,8 @@ const STORAGE_KEYS = {
   GITHUB_TOKEN: 'githubToken',      // GitHub Personal Access Token
   SETTINGS: 'settings',             // General settings
   RULES: 'reviewRules',             // Review rules and preferences
-  HISTORY: 'reviewHistory'          // Review history
+  HISTORY: 'reviewHistory',         // Review history
+  DIFF_LIMITS: 'diffLimits'         // Diff size limits
 };
 
 const DEFAULT_SETTINGS = {
@@ -30,6 +31,11 @@ const DEFAULT_RULES = {
   severity: 'medium',
   ignorePatterns: [],
   customInstructions: ''
+};
+
+const DEFAULT_DIFF_LIMITS = {
+  maxFiles: 40,
+  maxChars: 60000
 };
 
 const MAX_HISTORY_ITEMS = 50;
@@ -237,6 +243,29 @@ export class ConfigService {
    */
   static async saveRules(rules) {
     await chrome.storage.local.set({ [STORAGE_KEYS.RULES]: rules });
+  }
+
+  // ========== DIFF LIMITS ==========
+
+  /**
+   * Get diff size limits
+   * @returns {Promise<Object>}
+   */
+  static async getDiffLimits() {
+    const result = await chrome.storage.local.get(STORAGE_KEYS.DIFF_LIMITS);
+    return result[STORAGE_KEYS.DIFF_LIMITS] || DEFAULT_DIFF_LIMITS;
+  }
+
+  /**
+   * Set diff size limits
+   * @param {number} maxFiles
+   * @param {number} maxChars
+   * @returns {Promise<void>}
+   */
+  static async setDiffLimits(maxFiles, maxChars) {
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.DIFF_LIMITS]: { maxFiles, maxChars }
+    });
   }
 
   // ========== HISTORY ==========

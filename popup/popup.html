@@ -201,6 +201,34 @@
       </div>
 
       <div class="settings-group">
+        <h3>Diff Limits</h3>
+        <p class="help-text" style="margin-bottom: 12px;">
+          Larger values = more complete review, but slower and more expensive.
+        </p>
+        <div class="form-field">
+          <label for="max-files">Max Files to Analyze</label>
+          <select id="max-files">
+            <option value="15">15 files (Fast)</option>
+            <option value="25">25 files (Balanced)</option>
+            <option value="40" selected>40 files (Recommended)</option>
+            <option value="60">60 files (Large PRs)</option>
+            <option value="100">100 files (Very Large)</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="max-chars">Max Total Characters</label>
+          <select id="max-chars">
+            <option value="20000">20K (Fast)</option>
+            <option value="40000">40K (Balanced)</option>
+            <option value="60000" selected>60K (Recommended)</option>
+            <option value="100000">100K (Large PRs)</option>
+            <option value="150000">150K (Very Large)</option>
+          </select>
+        </div>
+        <button class="btn btn-small" id="btn-save-limits">Save Limits</button>
+      </div>
+
+      <div class="settings-group">
         <h3>About</h3>
         <p class="version">Version 1.0.0</p>
         <p class="help-text">

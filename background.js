@@ -101,6 +101,13 @@ async function handleMessage(message, sender) {
       await ConfigService.saveRules(message.rules);
       return { success: true };
 
+    case 'GET_DIFF_LIMITS':
+      return await ConfigService.getDiffLimits();
+
+    case 'SET_DIFF_LIMITS':
+      await ConfigService.setDiffLimits(message.maxFiles, message.maxChars);
+      return { success: true };
+
     case 'GET_HISTORY':
       return {
         success: true,
@@ -393,10 +400,11 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
       };
     }
 
-    // Token budget - increased for larger PRs
-    const MAX_TOTAL_CHARS = 30000;  // Increased from 12000
-    const MAX_FILE_CHARS = 3000;    // Increased from 2500
-    const MAX_FILES = 25;           // Increased from 10
+    // Get diff limits from settings
+    const diffLimits = await ConfigService.getDiffLimits();
+    const MAX_TOTAL_CHARS = diffLimits.maxChars || 60000;
+    const MAX_FILE_CHARS = 3500;  // Per-file limit
+    const MAX_FILES = diffLimits.maxFiles || 40;
     
     let totalChars = diffContent.length;
     let truncatedFiles = 0;

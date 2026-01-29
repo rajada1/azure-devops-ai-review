@@ -41,6 +41,15 @@ async function loadData() {
     if (settings.language) {
       document.getElementById('review-language').value = settings.language;
     }
+
+    // Load diff limits
+    const limitsResult = await chrome.runtime.sendMessage({ type: 'GET_DIFF_LIMITS' });
+    if (limitsResult.maxFiles) {
+      document.getElementById('max-files').value = limitsResult.maxFiles;
+    }
+    if (limitsResult.maxChars) {
+      document.getElementById('max-chars').value = limitsResult.maxChars;
+    }
   } catch (error) {
     console.error('Failed to load data:', error);
     showToast('Failed to load settings', 'error');
@@ -82,11 +91,31 @@ function setupEventListeners() {
     updateSettings({ language: e.target.value });
   });
 
+  // Save diff limits
+  document.getElementById('btn-save-limits').addEventListener('click', saveDiffLimits);
+
   // Rules tab
   document.getElementById('btn-save-rules').addEventListener('click', saveRules);
 
   // History tab
   document.getElementById('btn-clear-history').addEventListener('click', clearHistory);
+}
+
+async function saveDiffLimits() {
+  const maxFiles = parseInt(document.getElementById('max-files').value);
+  const maxChars = parseInt(document.getElementById('max-chars').value);
+  
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'SET_DIFF_LIMITS',
+      maxFiles,
+      maxChars
+    });
+    showToast('Diff limits saved!', 'success');
+  } catch (error) {
+    console.error('Failed to save limits:', error);
+    showToast('Failed to save limits', 'error');
+  }
 }
 
 function updateUI() {
