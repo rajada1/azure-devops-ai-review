@@ -422,6 +422,7 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
     });
 
     const filesToProcess = sortedEntries.slice(0, MAX_FILES);
+    console.log('[AI Review] Processing', filesToProcess.length, 'of', changeEntries.length, 'files');
 
     for (const entry of filesToProcess) {
       const path = entry.item?.path || entry.path;

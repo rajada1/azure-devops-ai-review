@@ -33,15 +33,8 @@ function renderPrInfo() {
     metaHtml += `<span>🔀 ${prData.sourceBranch} → ${prData.targetBranch}</span>`;
   }
   if (prData.filesChanged) {
-    const included = prData.filesIncluded || prData.filesChanged;
-    if (included < prData.filesChanged) {
-      metaHtml += `<span>📁 ${included}/${prData.filesChanged} files (${prData.filesChanged - included} skipped)</span>`;
-    } else {
-      metaHtml += `<span>📁 ${prData.filesChanged} files</span>`;
-    }
-  }
-  if (prData.filesTruncated > 0) {
-    metaHtml += `<span style="color: #f0ad4e;">⚠️ ${prData.filesTruncated} truncated</span>`;
+    // Show total files in PR - actual parsed count will be shown in stats after parsing
+    metaHtml += `<span>📁 ${prData.filesChanged} files in PR</span>`;
   }
   metaEl.innerHTML = metaHtml;
 }
