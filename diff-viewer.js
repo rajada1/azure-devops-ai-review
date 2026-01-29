@@ -132,21 +132,30 @@ function parseDiff(diffContent) {
     const changeType = headerMatch[1].charAt(0).toUpperCase() + headerMatch[1].slice(1).toLowerCase();
     const filePath = headerMatch[2].trim();
 
-    // Parse lines - they come after the header, NOT in code blocks
+    // Parse lines
     const lines = [];
     let additions = 0;
     let deletions = 0;
 
     // Get all lines after the header
     const contentLines = section.split('\n').slice(1);
+    let inCodeBlock = false;
     
     for (const line of contentLines) {
+      // Track code blocks
+      if (line.startsWith('```')) {
+        inCodeBlock = !inCodeBlock;
+        continue;
+      }
+      
       // Skip empty lines and truncation notices
-      if (!line.trim() || line.includes('(diff truncated)') || line.includes('(truncated)')) continue;
+      if (!line.trim() || line.includes('(diff truncated)') || line.includes('(truncated)') || line.includes('(File deleted)')) continue;
       
-      // Parse line with format: "L 42 + content" or "L 42 - content"
+      // Skip metadata lines
+      if (line.startsWith('(Could not fetch') || line.startsWith('(Error')) continue;
+      
+      // Format 1: "L 42 + content" (line-by-line diff)
       const lineMatch = line.match(/^L\s*(\d+)\s*([+-])\s*(.*)$/);
-      
       if (lineMatch) {
         const lineNum = lineMatch[1];
         const symbol = lineMatch[2];
@@ -159,18 +168,32 @@ function parseDiff(diffContent) {
           lines.push({ type: 'del', lineNum, content });
           deletions++;
         }
+        continue;
+      }
+      
+      // Format 2: "+ content" or "- content" (standard diff format, inside code blocks)
+      if (inCodeBlock || line.startsWith('+ ') || line.startsWith('- ') || line.startsWith('+\t') || line.startsWith('-\t')) {
+        if (line.startsWith('+ ') || line.startsWith('+\t') || line === '+') {
+          lines.push({ type: 'add', lineNum: '', content: line.substring(1).trimStart() });
+          additions++;
+        } else if (line.startsWith('- ') || line.startsWith('-\t') || line === '-') {
+          lines.push({ type: 'del', lineNum: '', content: line.substring(1).trimStart() });
+          deletions++;
+        } else if (!line.startsWith('@@') && !line.startsWith('diff ') && !line.startsWith('index ')) {
+          // Context line (no + or -)
+          lines.push({ type: 'context', lineNum: '', content: line });
+        }
       }
     }
 
-    if (lines.length > 0 || changeType.toLowerCase() === 'delete') {
-      files.push({
-        path: filePath,
-        changeType,
-        lines,
-        additions,
-        deletions
-      });
-    }
+    // Always add the file, even if no lines parsed (for deleted files or binary files)
+    files.push({
+      path: filePath,
+      changeType,
+      lines,
+      additions,
+      deletions
+    });
   }
 
   return files;
