@@ -647,146 +647,105 @@ function getChangeTypeName(changeType) {
 
 /**
  * Generate a unified diff between two file contents
- * Shows only the changed lines with context
+ * Shows only the changed lines with LINE NUMBERS
  * 
  * @param {string} oldContent - Original file content (target branch)
  * @param {string} newContent - New file content (source branch)  
  * @param {string} filePath - File path for display
  * @param {string} scope - 'changes-only', 'changes-context', or 'full-file'
  * @param {number} contextLines - Number of context lines (default 3)
- * @returns {string} - Formatted diff
+ * @returns {string} - Formatted diff with line numbers
  */
 function generateUnifiedDiff(oldContent, newContent, filePath, scope = 'changes-only', contextLines = 3) {
   const oldLines = oldContent.split('\n');
   const newLines = newContent.split('\n');
   
-  // For full-file scope, show the entire new file
+  // For full-file scope, show the entire new file with line numbers
   if (scope === 'full-file') {
-    return newLines.slice(0, 200).map((line, i) => `${String(i + 1).padStart(4)} | ${line}`).join('\n');
+    return newLines.slice(0, 200).map((line, i) => `L${i + 1}: ${line}`).join('\n');
   }
   
-  // Find which lines changed
-  const changedRanges = [];
-  let inChange = false;
-  let changeStart = -1;
-  
-  // Use simple line-by-line comparison with offset tolerance
-  const maxLen = Math.max(oldLines.length, newLines.length);
-  const changes = new Map(); // line number -> { type: 'add'|'remove'|'modify', oldLine?, newLine? }
-  
-  // Find matching and differing sections
+  // Build a map of changes with their actual line numbers
+  const result = [];
   let oldIdx = 0;
   let newIdx = 0;
+  
+  // Track which new lines are additions and which old lines are deletions
+  const additions = []; // { lineNum, content }
+  const deletions = []; // { lineNum, content }
   
   while (oldIdx < oldLines.length || newIdx < newLines.length) {
     const oldLine = oldLines[oldIdx];
     const newLine = newLines[newIdx];
     
-    if (oldLine === newLine) {
-      // Lines match, move both forward
+    if (oldIdx >= oldLines.length) {
+      // Rest are additions
+      additions.push({ lineNum: newIdx + 1, content: newLine });
+      newIdx++;
+    } else if (newIdx >= newLines.length) {
+      // Rest are deletions
+      deletions.push({ lineNum: oldIdx + 1, content: oldLine });
+      oldIdx++;
+    } else if (oldLine === newLine) {
+      // Lines match - add as context if needed
+      if (scope === 'changes-context') {
+        // Check if near a change
+        const nearChange = (idx, lines, otherLines) => {
+          for (let i = Math.max(0, idx - contextLines); i <= Math.min(lines.length - 1, idx + contextLines); i++) {
+            if (lines[i] !== otherLines[i]) return true;
+          }
+          return false;
+        };
+        if (nearChange(newIdx, newLines, oldLines)) {
+          result.push({ type: 'context', lineNum: newIdx + 1, content: newLine });
+        }
+      }
       oldIdx++;
       newIdx++;
-    } else if (oldLine === undefined) {
-      // Added line at end
-      changes.set(newIdx, { type: 'add', newLine, newIdx });
-      newIdx++;
-    } else if (newLine === undefined) {
-      // Removed line at end
-      changes.set(oldIdx + 10000, { type: 'remove', oldLine, oldIdx }); // offset to avoid collision
-      oldIdx++;
     } else {
-      // Lines differ - check if it's a modification or insert/delete
-      // Look ahead to find if old line exists later in new content
+      // Lines differ - check if insertion, deletion, or modification
       const oldInNew = newLines.indexOf(oldLine, newIdx);
       const newInOld = oldLines.indexOf(newLine, oldIdx);
       
-      if (oldInNew !== -1 && (newInOld === -1 || oldInNew - newIdx < newInOld - oldIdx)) {
-        // Old line found later in new - lines were added
-        while (newIdx < oldInNew) {
-          changes.set(newIdx, { type: 'add', newLine: newLines[newIdx], newIdx });
+      if (oldInNew !== -1 && (newInOld === -1 || oldInNew - newIdx <= newInOld - oldIdx)) {
+        // Lines were inserted
+        while (newIdx < oldInNew && newIdx < newLines.length) {
+          result.push({ type: 'add', lineNum: newIdx + 1, content: newLines[newIdx] });
           newIdx++;
         }
       } else if (newInOld !== -1) {
-        // New line found later in old - lines were removed
-        while (oldIdx < newInOld) {
-          changes.set(oldIdx + 10000, { type: 'remove', oldLine: oldLines[oldIdx], oldIdx });
+        // Lines were deleted
+        while (oldIdx < newInOld && oldIdx < oldLines.length) {
+          result.push({ type: 'del', lineNum: oldIdx + 1, content: oldLines[oldIdx] });
           oldIdx++;
         }
       } else {
         // Line was modified
-        changes.set(oldIdx + 10000, { type: 'remove', oldLine, oldIdx });
-        changes.set(newIdx, { type: 'add', newLine, newIdx });
+        result.push({ type: 'del', lineNum: oldIdx + 1, content: oldLine });
+        result.push({ type: 'add', lineNum: newIdx + 1, content: newLine });
         oldIdx++;
         newIdx++;
       }
     }
   }
   
-  if (changes.size === 0) {
+  if (result.length === 0) {
     return '';
   }
   
-  // Build output with context
-  const result = [];
-  const changedNewLines = new Set();
-  const changedOldLines = new Set();
-  
-  changes.forEach((change, key) => {
-    if (change.type === 'add') {
-      changedNewLines.add(change.newIdx);
+  // Format output with clear line numbers
+  const output = result.slice(0, 200).map(item => {
+    const lineStr = `L${String(item.lineNum).padStart(3)}`;
+    if (item.type === 'add') {
+      return `${lineStr} + ${item.content}`;
+    } else if (item.type === 'del') {
+      return `${lineStr} - ${item.content}`;
     } else {
-      changedOldLines.add(change.oldIdx);
+      return `${lineStr}   ${item.content}`;
     }
   });
   
-  // Generate output showing changes with context
-  let lastOutputLine = -10;
-  
-  for (let i = 0; i < newLines.length; i++) {
-    const isChanged = changedNewLines.has(i);
-    const needsContext = scope === 'changes-context';
-    
-    // Check if within context range of a change
-    let inContextRange = false;
-    if (needsContext) {
-      for (let j = Math.max(0, i - contextLines); j <= Math.min(newLines.length - 1, i + contextLines); j++) {
-        if (changedNewLines.has(j)) {
-          inContextRange = true;
-          break;
-        }
-      }
-    }
-    
-    if (isChanged) {
-      // Show removed lines first (from old content around this position)
-      changedOldLines.forEach(oldIdx => {
-        if (Math.abs(oldIdx - i) <= 2) {
-          result.push(`- ${oldLines[oldIdx]}`);
-          changedOldLines.delete(oldIdx);
-        }
-      });
-      
-      result.push(`+ ${newLines[i]}`);
-      lastOutputLine = i;
-    } else if (inContextRange) {
-      // Add separator if there's a gap
-      if (i > lastOutputLine + 1 && result.length > 0) {
-        result.push('  ...');
-      }
-      result.push(`  ${newLines[i]}`);
-      lastOutputLine = i;
-    } else if (scope === 'changes-only' && isChanged) {
-      result.push(`+ ${newLines[i]}`);
-      lastOutputLine = i;
-    }
-  }
-  
-  // Add any remaining removed lines
-  changedOldLines.forEach(oldIdx => {
-    result.push(`- ${oldLines[oldIdx]}`);
-  });
-  
-  return result.slice(0, 150).join('\n'); // Limit output
+  return output.join('\n');
 }
 
 // Log extension startup

@@ -164,13 +164,19 @@ export class BaseProvider {
     // Scope instruction
     const scopeInstruction = `
 
-CRITICAL INSTRUCTION - REVIEW SCOPE:
-- Only review code that is ACTUALLY CHANGED in this pull request (lines marked with + or -)
-- Do NOT report issues in unchanged code that may appear as context
-- If a file shows partial content, assume the rest of the file (including dispose methods, constructors, etc.) exists and is correct
-- Lines starting with "+" are additions (new code) - focus on these
-- Lines starting with "-" are deletions (removed code)
-- Lines starting with " " (space) are context only - do NOT report issues in these`;
+CRITICAL INSTRUCTIONS:
+
+1. LINE NUMBERS: The diff format shows "L<number>" at the start of each line (e.g., "L 42 + code").
+   - ALWAYS use these EXACT line numbers in your response
+   - The line number comes BEFORE the +/- symbol
+   - Example: "L 42 + new code" means line 42 in the new file
+
+2. REVIEW SCOPE:
+   - Only review code that is ACTUALLY CHANGED (lines with + or -)
+   - Do NOT report issues in unchanged code (context lines without +/-)
+   - If a file shows partial content, assume the rest exists (dispose methods, etc.)
+   - Lines with "+" are additions (new code) - focus on these
+   - Lines with "-" are deletions (removed code)`;
 
     return `You are an expert code reviewer. Analyze the provided git diff/patch and provide a comprehensive code review in ${language}.${scopeInstruction}${focusSection}${severityNote}${customInstructions}
 
@@ -184,7 +190,7 @@ Please analyze the git diff/patch and provide your review in this EXACT JSON for
       "type": "bug|security|performance|style|logic",
       "description": "Description of the issue",
       "file": "filename",
-      "line": "line number or range",
+      "line": 42,
       "codeSnippet": "The exact code snippet from the diff that has the issue (copy the relevant lines)",
       "suggestion": "How to fix it",
       "suggestedCode": "The corrected code snippet (optional, include when applicable)"
@@ -195,7 +201,7 @@ Please analyze the git diff/patch and provide your review in this EXACT JSON for
       "severity": "high|medium|low",
       "description": "Security concern description",
       "file": "filename",
-      "line": "line number or range",
+      "line": 42,
       "codeSnippet": "The exact code snippet with the security issue",
       "recommendation": "How to fix it",
       "suggestedCode": "The corrected code (optional)"
@@ -206,7 +212,7 @@ Please analyze the git diff/patch and provide your review in this EXACT JSON for
       "type": "performance|style|best-practice|maintainability|readability",
       "description": "Suggestion description",
       "file": "filename",
-      "line": "line number or range",
+      "line": 42,
       "codeSnippet": "The current code that could be improved",
       "suggestedCode": "The improved code (optional)"
     }
@@ -222,10 +228,10 @@ Please analyze the git diff/patch and provide your review in this EXACT JSON for
   }
 }
 
-IMPORTANT:
-- For each issue/suggestion, ALWAYS include the "codeSnippet" field with the exact code from the diff
-- Include "suggestedCode" when you can provide a concrete fix
-- Copy the code exactly as it appears in the diff
+IMPORTANT RULES:
+1. LINE NUMBERS: The "line" field MUST be the actual line number from the diff (shown as "L<number>"). Use a NUMBER, not a string. Extract it from "L 42 + code" → line: 42
+2. CODE SNIPPETS: Always include "codeSnippet" with the exact code from the diff
+3. Include "suggestedCode" when you can provide a concrete fix
 
 Scoring Guidelines:
 - All metric scores should be 0-100
