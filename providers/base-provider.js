@@ -1,0 +1,282 @@
+/**
+ * Base AI Provider - Abstract class for all AI providers
+ * All providers must extend this class and implement the required methods
+ */
+export class BaseProvider {
+  /**
+   * @param {Object} config - Provider configuration
+   * @param {string} config.apiKey - API key (if required)
+   * @param {string} config.baseUrl - Base URL for API calls
+   * @param {string} config.model - Model to use
+   */
+  constructor(config = {}) {
+    if (new.target === BaseProvider) {
+      throw new Error('BaseProvider is abstract and cannot be instantiated directly');
+    }
+    
+    this.config = {
+      apiKey: config.apiKey || '',
+      baseUrl: config.baseUrl || '',
+      model: config.model || this.getDefaultModel(),
+      ...config
+    };
+  }
+
+  /**
+   * Get provider name (unique identifier)
+   * @returns {string}
+   */
+  static get id() {
+    throw new Error('Provider must implement static id getter');
+  }
+
+  /**
+   * Get display name for UI
+   * @returns {string}
+   */
+  static get displayName() {
+    throw new Error('Provider must implement static displayName getter');
+  }
+
+  /**
+   * Get provider description
+   * @returns {string}
+   */
+  static get description() {
+    return '';
+  }
+
+  /**
+   * Check if this provider requires an API key
+   * @returns {boolean}
+   */
+  static get requiresApiKey() {
+    return true;
+  }
+
+  /**
+   * Check if this provider supports custom base URL
+   * @returns {boolean}
+   */
+  static get supportsCustomUrl() {
+    return false;
+  }
+
+  /**
+   * Get available models for this provider
+   * @returns {Array<{id: string, name: string, description?: string}>}
+   */
+  static get availableModels() {
+    return [];
+  }
+
+  /**
+   * Get the default model for this provider
+   * @returns {string}
+   */
+  getDefaultModel() {
+    const models = this.constructor.availableModels;
+    return models.length > 0 ? models[0].id : '';
+  }
+
+  /**
+   * Validate provider configuration
+   * @returns {{valid: boolean, errors: string[]}}
+   */
+  validate() {
+    const errors = [];
+
+    if (this.constructor.requiresApiKey && !this.config.apiKey) {
+      errors.push('API key is required');
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors
+    };
+  }
+
+  /**
+   * Test connection to the provider
+   * @returns {Promise<{success: boolean, error?: string}>}
+   */
+  async testConnection() {
+    throw new Error('Provider must implement testConnection()');
+  }
+
+  /**
+   * Perform code review on a patch/diff
+   * @param {string} patchContent - Git diff/patch content
+   * @param {Object} options - Review options
+   * @param {string} options.language - Response language (default: 'English')
+   * @param {string} options.prTitle - Pull request title
+   * @param {string} options.prDescription - Pull request description
+   * @returns {Promise<ReviewResult>}
+   */
+  async reviewCode(patchContent, options = {}) {
+    throw new Error('Provider must implement reviewCode()');
+  }
+
+  /**
+   * Get conversational response about the code
+   * @param {string} patchContent - Git diff/patch content
+   * @param {Array<{role: string, content: string}>} conversationHistory - Previous messages
+   * @param {Object} options - Options
+   * @returns {Promise<{response: string}>}
+   */
+  async chat(patchContent, conversationHistory, options = {}) {
+    throw new Error('Provider must implement chat()');
+  }
+
+  /**
+   * Build the system prompt for code review
+   * @param {string} language - Response language
+   * @returns {string}
+   */
+  buildReviewPrompt(language = 'English') {
+    return `You are an expert code reviewer. Analyze the provided git patch and provide a comprehensive code review in ${language}.
+
+Please analyze the git diff/patch and provide your review in this EXACT JSON format:
+
+{
+  "summary": "Brief overview of the changes (2-3 sentences)",
+  "issues": [
+    {
+      "severity": "high|medium|low",
+      "type": "bug|security|performance|style|logic",
+      "description": "Description of the issue",
+      "file": "filename",
+      "line": "line number or range",
+      "suggestion": "How to fix it"
+    }
+  ],
+  "security": [
+    {
+      "severity": "high|medium|low",
+      "description": "Security concern description",
+      "recommendation": "How to fix it"
+    }
+  ],
+  "suggestions": [
+    {
+      "type": "performance|style|best-practice|maintainability|readability",
+      "description": "Suggestion description",
+      "file": "filename",
+      "line": "line number or range"
+    }
+  ],
+  "positives": [
+    "List of positive aspects of the code changes"
+  ],
+  "metrics": {
+    "overallScore": 85,
+    "codeQuality": 80,
+    "securityScore": 90,
+    "maintainability": 85
+  }
+}
+
+Scoring Guidelines:
+- All metric scores should be 0-100
+- overallScore: Holistic assessment considering all factors
+- codeQuality: Clarity, structure, error handling
+- securityScore: 100 = no issues found; deduct points per severity
+- maintainability: Readability, modularity, documentation
+
+Important: Respond ONLY with valid JSON. Do not include any explanatory text before or after the JSON.`;
+  }
+
+  /**
+   * Build the chat system prompt
+   * @param {string} patchContent - The patch being discussed
+   * @param {string} language - Response language
+   * @returns {string}
+   */
+  buildChatPrompt(patchContent, language = 'English') {
+    const truncatedPatch = patchContent.length > 30000 
+      ? patchContent.substring(0, 30000) + '\n... (truncated)' 
+      : patchContent;
+
+    return `You are an expert code reviewer. The following code patch is being discussed:
+
+CODE PATCH (Git Diff Format):
+\`\`\`diff
+${truncatedPatch}
+\`\`\`
+
+Your role is to answer questions about this code review in a helpful, concise manner.
+${language !== 'English' ? `IMPORTANT: Respond entirely in ${language}.` : ''}`;
+  }
+
+  /**
+   * Parse the review response from the AI
+   * @param {string} responseText - Raw response from AI
+   * @returns {ReviewResult}
+   */
+  parseReviewResponse(responseText) {
+    try {
+      // Try to extract JSON from the response
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          success: true,
+          review: {
+            summary: parsed.summary || 'Review completed',
+            issues: parsed.issues || [],
+            security: parsed.security || [],
+            suggestions: parsed.suggestions || [],
+            positives: parsed.positives || [],
+            metrics: parsed.metrics || {
+              overallScore: 75,
+              codeQuality: 75,
+              securityScore: 85,
+              maintainability: 75
+            }
+          },
+          provider: this.constructor.id,
+          model: this.config.model
+        };
+      }
+      throw new Error('No JSON found in response');
+    } catch (error) {
+      // Fallback for non-JSON responses
+      return {
+        success: true,
+        review: {
+          summary: responseText.substring(0, 500),
+          issues: [],
+          security: [],
+          suggestions: [],
+          positives: [],
+          metrics: {
+            overallScore: 75,
+            codeQuality: 75,
+            securityScore: 85,
+            maintainability: 75
+          },
+          note: 'Model did not return structured JSON'
+        },
+        provider: this.constructor.id,
+        model: this.config.model,
+        rawResponse: responseText
+      };
+    }
+  }
+}
+
+/**
+ * @typedef {Object} ReviewResult
+ * @property {boolean} success
+ * @property {Object} review
+ * @property {string} review.summary
+ * @property {Array} review.issues
+ * @property {Array} review.security
+ * @property {Array} review.suggestions
+ * @property {Array} review.positives
+ * @property {Object} review.metrics
+ * @property {string} provider
+ * @property {string} model
+ * @property {string} [rawResponse]
+ * @property {string} [error]
+ */

@@ -1,0 +1,66 @@
+{
+  "manifest_version": 3,
+  "name": "Azure DevOps AI Code Review",
+  "version": "1.0.0",
+  "description": "AI-powered code reviews for Azure DevOps Pull Requests - Connect your preferred AI model",
+
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+
+  "host_permissions": [
+    "https://dev.azure.com/*",
+    "https://*.visualstudio.com/*"
+  ],
+
+  "optional_host_permissions": [
+    "http://*:*/*",
+    "https://*:*/*"
+  ],
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://dev.azure.com/*/_git/*/pullrequest/*",
+        "https://*.visualstudio.com/*/_git/*/pullrequest/*"
+      ],
+      "js": ["content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content/*.js",
+        "content/*.css",
+        "providers/*.js",
+        "services/*.js",
+        "icons/*"
+      ],
+      "matches": ["https://dev.azure.com/*", "https://*.visualstudio.com/*"]
+    }
+  ]
+}

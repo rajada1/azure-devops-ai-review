@@ -1,0 +1,36 @@
+<!-- SVG icon - save this as icon.svg and convert to PNG for different sizes -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0078d4"/>
+      <stop offset="100%" style="stop-color:#106ebe"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="128" height="128" rx="24" fill="url(#bg)"/>
+  
+  <!-- Robot face -->
+  <g fill="white">
+    <!-- Head -->
+    <rect x="24" y="32" width="80" height="64" rx="12"/>
+    
+    <!-- Eyes -->
+    <circle cx="48" cy="56" r="10" fill="#0078d4"/>
+    <circle cx="80" cy="56" r="10" fill="#0078d4"/>
+    <circle cx="50" cy="54" r="4" fill="white"/>
+    <circle cx="82" cy="54" r="4" fill="white"/>
+    
+    <!-- Mouth/Screen -->
+    <rect x="40" y="72" width="48" height="12" rx="4" fill="#0078d4"/>
+    
+    <!-- Antenna -->
+    <rect x="60" y="16" width="8" height="20" rx="4"/>
+    <circle cx="64" cy="16" r="6"/>
+  </g>
+  
+  <!-- Code bracket -->
+  <g fill="white" opacity="0.9">
+    <text x="44" y="82" font-family="monospace" font-size="10" fill="white">&lt;/&gt;</text>
+  </g>
+</svg>

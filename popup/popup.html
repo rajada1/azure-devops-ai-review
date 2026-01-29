@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Azure DevOps AI Review</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup">
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">🤖</span>
+        <h1>AI Code Review</h1>
+      </div>
+      <nav class="nav">
+        <button class="nav-btn active" data-tab="status">Status</button>
+        <button class="nav-btn" data-tab="providers">Providers</button>
+        <button class="nav-btn" data-tab="settings">Settings</button>
+      </nav>
+    </header>
+
+    <!-- Status Tab -->
+    <section id="tab-status" class="tab-content active">
+      <div class="status-card">
+        <div class="status-indicator" id="status-indicator">
+          <span class="status-dot"></span>
+          <span class="status-text">Checking...</span>
+        </div>
+        <p class="status-description" id="status-description"></p>
+      </div>
+
+      <div class="current-provider" id="current-provider">
+        <h3>Active Provider</h3>
+        <div class="provider-info" id="provider-info">
+          <p>No provider configured</p>
+        </div>
+      </div>
+
+      <div class="quick-actions">
+        <button class="btn" id="btn-test-connection">Test Connection</button>
+      </div>
+    </section>
+
+    <!-- Providers Tab -->
+    <section id="tab-providers" class="tab-content">
+      <div class="provider-list" id="provider-list">
+        <!-- Populated by JS -->
+      </div>
+
+      <div class="add-provider">
+        <h3>Add Provider</h3>
+        <select id="provider-select">
+          <option value="">Select a provider...</option>
+        </select>
+
+        <div id="provider-form" class="provider-form hidden">
+          <!-- Dynamic form fields -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings Tab -->
+    <section id="tab-settings" class="tab-content">
+      <div class="settings-group">
+        <h3>Azure DevOps</h3>
+        <div class="form-field">
+          <label for="azure-token">Personal Access Token (PAT)</label>
+          <input type="password" id="azure-token" placeholder="Enter your PAT">
+          <button class="btn btn-small" id="btn-save-token">Save</button>
+          <p class="help-text">
+            Required for private repositories. 
+            <a href="https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate" target="_blank">
+              How to create a PAT
+            </a>
+          </p>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>Review Language</h3>
+        <div class="form-field">
+          <select id="review-language">
+            <option value="English">English</option>
+            <option value="Portuguese">Português</option>
+            <option value="Spanish">Español</option>
+            <option value="French">Français</option>
+            <option value="German">Deutsch</option>
+            <option value="Japanese">日本語</option>
+            <option value="Chinese">中文</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>About</h3>
+        <p class="version">Version 1.0.0</p>
+        <p class="help-text">
+          AI-powered code reviews for Azure DevOps.
+          <br>
+          Connect your preferred AI model and get instant feedback on pull requests.
+        </p>
+      </div>
+    </section>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
