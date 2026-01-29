@@ -39,7 +39,7 @@ export class GitHubCopilotProvider extends BaseProvider {
    */
   static async fetchAvailableModels(token) {
     try {
-      const response = await fetch('https://api.github.com/copilot/models', {
+      const response = await fetch('https://models.inference.ai.azure.com/models', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -48,21 +48,7 @@ export class GitHubCopilotProvider extends BaseProvider {
       });
 
       if (!response.ok) {
-        // Fallback: try the models inference endpoint
-        const fallbackResponse = await fetch('https://models.inference.ai.azure.com/models', {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          }
-        });
-
-        if (!fallbackResponse.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const fallbackData = await fallbackResponse.json();
-        return GitHubCopilotProvider._parseModelsResponse(fallbackData);
+        throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
@@ -85,23 +71,29 @@ export class GitHubCopilotProvider extends BaseProvider {
    * @private
    */
   static _parseModelsResponse(data) {
-    // Handle different response formats
+    // Handle array response
     const models = Array.isArray(data) ? data : (data.models || data.data || []);
     
     return models
       .filter(model => {
-        // Filter for chat-capable models
-        const id = model.id || model.name || '';
-        const capabilities = model.capabilities || {};
-        return capabilities.chat || capabilities.completion || 
-               id.includes('gpt') || id.includes('claude') || id.includes('o1');
+        // Filter for chat-completion models only
+        return model.task === 'chat-completion';
       })
       .map(model => ({
-        id: model.id || model.name,
-        name: model.friendly_name || model.display_name || model.name || model.id,
-        description: model.description || model.summary || ''
+        id: model.name || model.id,
+        name: model.friendly_name || model.name || model.id,
+        description: model.summary || model.description?.substring(0, 100) || ''
       }))
-      .slice(0, 20); // Limit to 20 models
+      .sort((a, b) => {
+        // Prioritize popular models
+        const priority = ['gpt-4o', 'gpt-4', 'claude', 'o1', 'llama'];
+        const aPriority = priority.findIndex(p => a.id.toLowerCase().includes(p));
+        const bPriority = priority.findIndex(p => b.id.toLowerCase().includes(p));
+        if (aPriority !== -1 && bPriority === -1) return -1;
+        if (bPriority !== -1 && aPriority === -1) return 1;
+        if (aPriority !== bPriority) return aPriority - bPriority;
+        return a.name.localeCompare(b.name);
+      });
   }
 
   constructor(config = {}) {
