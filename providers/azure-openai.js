@@ -155,6 +155,8 @@ export class AzureOpenAIProvider extends BaseProvider {
     const systemPrompt = this.buildReviewPrompt(language, rules);
     const userMessage = this._buildUserMessage(patchContent, prTitle, prDescription);
 
+    console.log('[AI Review] Sending request to Azure OpenAI, diff size:', patchContent.length, 'chars');
+
     try {
       const response = await fetch(this._getEndpoint(), {
         method: 'POST',
@@ -172,11 +174,24 @@ export class AzureOpenAIProvider extends BaseProvider {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
+        console.error('[AI Review] Azure OpenAI error response:', error);
         throw new Error(error.error?.message || error.message || `HTTP ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('[AI Review] Azure OpenAI response:', {
+        hasChoices: !!data.choices,
+        choicesLength: data.choices?.length,
+        finishReason: data.choices?.[0]?.finish_reason,
+        contentLength: data.choices?.[0]?.message?.content?.length,
+        usage: data.usage
+      });
+      
       const content = data.choices?.[0]?.message?.content || '';
+      
+      if (!content) {
+        console.error('[AI Review] Empty content from Azure OpenAI. Full response:', JSON.stringify(data).substring(0, 500));
+      }
       
       return this.parseReviewResponse(content);
     } catch (error) {
