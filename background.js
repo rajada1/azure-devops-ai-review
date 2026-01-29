@@ -252,7 +252,6 @@ async function fetchPRDiff(prInfo, token) {
     const changeEntries = changesData.changeEntries || [];
 
     // Build a simple diff summary (file list with change types)
-    // For full diff, we'd need to fetch each file's content
     let diffContent = `Pull Request: ${prData.title}\n`;
     diffContent += `Description: ${prData.description || 'No description'}\n\n`;
     diffContent += `Source: ${prData.sourceRefName?.replace('refs/heads/', '')}\n`;
@@ -260,19 +259,44 @@ async function fetchPRDiff(prInfo, token) {
     diffContent += `Changed Files (${changeEntries.length}):\n`;
     diffContent += '---\n\n';
 
-    // Fetch content for each changed file (limit to first 10 for performance)
-    const filesToFetch = changeEntries.slice(0, 15);
+    // Token budget: ~3000 tokens = ~12000 chars for content
+    const MAX_TOTAL_CHARS = 10000;
+    const MAX_FILE_CHARS = 1500;
+    const MAX_FILES = 8;
+    
+    let totalChars = diffContent.length;
+    
+    // Prioritize code files
+    const codeExtensions = ['.js', '.ts', '.py', '.cs', '.java', '.go', '.rs', '.cpp', '.c', '.jsx', '.tsx', '.vue', '.rb'];
+    const sortedEntries = [...changeEntries].sort((a, b) => {
+      const pathA = a.item?.path || '';
+      const pathB = b.item?.path || '';
+      const isCodeA = codeExtensions.some(ext => pathA.endsWith(ext));
+      const isCodeB = codeExtensions.some(ext => pathB.endsWith(ext));
+      if (isCodeA && !isCodeB) return -1;
+      if (isCodeB && !isCodeA) return 1;
+      return 0;
+    });
+
+    const filesToFetch = sortedEntries.slice(0, MAX_FILES);
     
     for (const entry of filesToFetch) {
+      if (totalChars >= MAX_TOTAL_CHARS) {
+        diffContent += `\n(Truncated - reached size limit)\n`;
+        break;
+      }
+
       const path = entry.item?.path || entry.originalPath;
       if (!path) continue;
 
       const changeType = getChangeTypeName(entry.changeType);
-      diffContent += `\n## ${changeType}: ${path}\n`;
+      const fileHeader = `\n## ${changeType}: ${path}\n`;
+      
+      diffContent += fileHeader;
+      totalChars += fileHeader.length;
 
       try {
         if (changeType !== 'Delete') {
-          // Fetch new content
           const contentResponse = await fetch(
             `${apiBase}/git/repositories/${prInfo.repository}/items?path=${encodeURIComponent(path)}&versionDescriptor.version=${encodeURIComponent(prData.sourceRefName.replace('refs/heads/', ''))}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`,
             { headers }
@@ -281,7 +305,13 @@ async function fetchPRDiff(prInfo, token) {
           if (contentResponse.ok) {
             const contentData = await contentResponse.json();
             if (contentData.content) {
-              diffContent += '```\n' + contentData.content.substring(0, 5000) + '\n```\n';
+              const remainingBudget = Math.min(MAX_FILE_CHARS, MAX_TOTAL_CHARS - totalChars - 100);
+              if (remainingBudget > 100) {
+                const truncatedContent = contentData.content.substring(0, remainingBudget);
+                const codeBlock = '```\n' + truncatedContent + (truncatedContent.length < contentData.content.length ? '\n...(truncated)' : '') + '\n```\n';
+                diffContent += codeBlock;
+                totalChars += codeBlock.length;
+              }
             }
           }
         }
@@ -290,8 +320,8 @@ async function fetchPRDiff(prInfo, token) {
       }
     }
 
-    if (changeEntries.length > 15) {
-      diffContent += `\n... and ${changeEntries.length - 15} more files\n`;
+    if (changeEntries.length > MAX_FILES) {
+      diffContent += `\n... and ${changeEntries.length - MAX_FILES} more files not shown\n`;
     }
 
     return {
