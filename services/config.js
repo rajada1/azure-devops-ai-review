@@ -34,8 +34,7 @@ const DEFAULT_RULES = {
 };
 
 const DEFAULT_DIFF_LIMITS = {
-  maxFiles: 40,
-  maxChars: 60000
+  maxFiles: 40
 };
 
 const MAX_HISTORY_ITEMS = 50;
@@ -259,12 +258,11 @@ export class ConfigService {
   /**
    * Set diff size limits
    * @param {number} maxFiles
-   * @param {number} maxChars
    * @returns {Promise<void>}
    */
-  static async setDiffLimits(maxFiles, maxChars) {
+  static async setDiffLimits(maxFiles) {
     await chrome.storage.local.set({
-      [STORAGE_KEYS.DIFF_LIMITS]: { maxFiles, maxChars }
+      [STORAGE_KEYS.DIFF_LIMITS]: { maxFiles }
     });
   }
 

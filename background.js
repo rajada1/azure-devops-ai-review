@@ -105,7 +105,7 @@ async function handleMessage(message, sender) {
       return await ConfigService.getDiffLimits();
 
     case 'SET_DIFF_LIMITS':
-      await ConfigService.setDiffLimits(message.maxFiles, message.maxChars);
+      await ConfigService.setDiffLimits(message.maxFiles);
       return { success: true };
 
     case 'GET_HISTORY':
@@ -404,6 +404,8 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
     const diffLimits = await ConfigService.getDiffLimits();
     const MAX_FILE_CHARS = 5000;  // Per-file limit to avoid huge single files
     const MAX_FILES = diffLimits.maxFiles || 40;
+    
+    console.log('[AI Review] Diff limits:', { maxFiles: MAX_FILES, savedLimits: diffLimits });
     
     let skippedFiles = 0;
 
