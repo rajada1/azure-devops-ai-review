@@ -102,6 +102,19 @@ export class ApiFreeProvider extends BaseProvider {
   }
 
   /**
+   * Build headers for API Free requests
+   */
+  buildHeaders() {
+    return {
+      'Authorization': `Bearer ${this.config.apiKey}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Origin': 'https://www.apifree.ai',
+      'Referer': 'https://www.apifree.ai/'
+    };
+  }
+
+  /**
    * Test the connection
    */
   async testConnection() {
@@ -111,14 +124,13 @@ export class ApiFreeProvider extends BaseProvider {
       // Try a simple completion request to test the connection
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
-          'Content-Type': 'application/json'
-        },
+        headers: this.buildHeaders(),
         body: JSON.stringify({
           model: this.config.model || 'anthropic/claude-sonnet-4.5',
           messages: [{ role: 'user', content: 'Hi' }],
-          max_tokens: 10
+          max_tokens: 10,
+          temperature: 1,
+          stream: false
         })
       });
 
@@ -148,22 +160,18 @@ export class ApiFreeProvider extends BaseProvider {
     const systemPrompt = this.buildReviewPrompt(options.language, options.rules);
 
     const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Please review the following code changes:\n\n${patchContent}` }
+      { role: 'user', content: `${systemPrompt}\n\nPlease review the following code changes:\n\n${patchContent}` }
     ];
 
     try {
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
-          'Content-Type': 'application/json'
-        },
+        headers: this.buildHeaders(),
         body: JSON.stringify({
           model: model,
           messages: messages,
           max_tokens: maxTokens,
-          temperature: 0.3,
+          temperature: 1,
           stream: false
         })
       });
@@ -207,30 +215,30 @@ export class ApiFreeProvider extends BaseProvider {
     const model = this.config.model || 'anthropic/claude-sonnet-4.5';
     const maxTokens = this.config.maxTokens || 8192;
 
-    const systemPrompt = `You are a helpful code review assistant. You have already reviewed the following code changes and are now answering follow-up questions.
+    const systemContext = `You are a helpful code review assistant. You have already reviewed the following code changes and are now answering follow-up questions.
 
 CODE CHANGES:
 ${patchContent}
 
 Answer questions about this code. Be concise but thorough. If asked about specific issues, reference the relevant code.`;
 
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...conversationHistory
-    ];
+    // Prepend system context to first user message since API might not support system role
+    const messages = conversationHistory.map((msg, idx) => {
+      if (idx === 0 && msg.role === 'user') {
+        return { ...msg, content: `${systemContext}\n\n${msg.content}` };
+      }
+      return msg;
+    });
 
     try {
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
-          'Content-Type': 'application/json'
-        },
+        headers: this.buildHeaders(),
         body: JSON.stringify({
           model: model,
           messages: messages,
           max_tokens: maxTokens,
-          temperature: 0.5,
+          temperature: 1,
           stream: false
         })
       });
