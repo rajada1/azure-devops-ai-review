@@ -6,6 +6,7 @@ let reviewPanel = null;
 let isReviewInProgress = false;
 let patchContent = null;
 let conversationHistory = [];
+let currentPrInfo = null;
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
@@ -304,11 +305,20 @@ function renderReview(result) {
     html += `<div class="ai-review-section">
       <h4>⚠️ Issues (${review.issues.length})</h4>
       <ul class="ai-review-list">
-        ${review.issues.map(issue => `
-          <li class="severity-${issue.severity || 'medium'}">
-            <span class="badge ${issue.severity || 'medium'}">${issue.severity || 'info'}</span>
-            <span>${escapeHtml(issue.description || '')}</span>
+        ${review.issues.map((issue, idx) => `
+          <li class="severity-${issue.severity || 'medium'}" data-issue-idx="${idx}">
+            <div class="issue-header">
+              <span class="badge ${issue.severity || 'medium'}">${issue.severity || 'info'}</span>
+              <span class="issue-text">${escapeHtml(issue.description || '')}</span>
+            </div>
             ${issue.file ? `<span class="file">${escapeHtml(issue.file)}${issue.line ? `:${issue.line}` : ''}</span>` : ''}
+            <button class="ai-review-btn-small add-comment-btn" 
+                    data-type="issue" 
+                    data-file="${escapeHtml(issue.file || '')}" 
+                    data-line="${issue.line || ''}"
+                    data-text="${escapeHtml(issue.description || '')}">
+              💬 Add Comment
+            </button>
           </li>
         `).join('')}
       </ul>
@@ -320,11 +330,20 @@ function renderReview(result) {
     html += `<div class="ai-review-section">
       <h4>🔒 Security Concerns (${review.security.length})</h4>
       <ul class="ai-review-list">
-        ${review.security.map(sec => `
-          <li class="severity-${sec.severity || 'medium'}">
-            <span class="badge ${sec.severity || 'medium'}">${sec.severity || 'warning'}</span>
-            <span>${escapeHtml(sec.description || '')}</span>
+        ${review.security.map((sec, idx) => `
+          <li class="severity-${sec.severity || 'medium'}" data-security-idx="${idx}">
+            <div class="issue-header">
+              <span class="badge ${sec.severity || 'medium'}">${sec.severity || 'warning'}</span>
+              <span class="issue-text">${escapeHtml(sec.description || '')}</span>
+            </div>
             ${sec.recommendation ? `<div class="recommendation">💡 ${escapeHtml(sec.recommendation)}</div>` : ''}
+            <button class="ai-review-btn-small add-comment-btn" 
+                    data-type="security" 
+                    data-file="${escapeHtml(sec.file || '')}" 
+                    data-line="${sec.line || ''}"
+                    data-text="${escapeHtml(sec.description + (sec.recommendation ? ' - ' + sec.recommendation : ''))}">
+              💬 Add Comment
+            </button>
           </li>
         `).join('')}
       </ul>
@@ -336,10 +355,20 @@ function renderReview(result) {
     html += `<div class="ai-review-section">
       <h4>💡 Suggestions (${review.suggestions.length})</h4>
       <ul class="ai-review-list">
-        ${review.suggestions.map(sug => `
-          <li>
-            <span class="badge suggestion">${sug.type || 'tip'}</span>
-            <span>${escapeHtml(sug.description || '')}</span>
+        ${review.suggestions.map((sug, idx) => `
+          <li data-suggestion-idx="${idx}">
+            <div class="issue-header">
+              <span class="badge suggestion">${sug.type || 'tip'}</span>
+              <span class="issue-text">${escapeHtml(sug.description || '')}</span>
+            </div>
+            ${sug.file ? `<span class="file">${escapeHtml(sug.file)}${sug.line ? `:${sug.line}` : ''}</span>` : ''}
+            <button class="ai-review-btn-small add-comment-btn" 
+                    data-type="suggestion" 
+                    data-file="${escapeHtml(sug.file || '')}" 
+                    data-line="${sug.line || ''}"
+                    data-text="${escapeHtml(sug.description || '')}">
+              💬 Add Comment
+            </button>
           </li>
         `).join('')}
       </ul>
@@ -358,6 +387,11 @@ function renderReview(result) {
 
   html += `</div>`;
   content.innerHTML = html;
+
+  // Add event listeners for comment buttons
+  content.querySelectorAll('.add-comment-btn').forEach(btn => {
+    btn.addEventListener('click', handleAddComment);
+  });
 }
 
 async function startReview() {
@@ -370,6 +404,9 @@ async function startReview() {
     isReviewInProgress = false;
     return;
   }
+
+  // Store for comment posting
+  currentPrInfo = prInfo;
 
   // Expand panel if minimized
   if (reviewPanel && reviewPanel.classList.contains('minimized')) {
@@ -521,6 +558,103 @@ function formatResponse(text) {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\n/g, '<br>');
+}
+
+async function handleAddComment(event) {
+  const btn = event.target;
+  const file = btn.dataset.file || null;
+  const line = btn.dataset.line ? parseInt(btn.dataset.line) : null;
+  const text = btn.dataset.text || '';
+  const type = btn.dataset.type || 'suggestion';
+
+  if (!currentPrInfo) {
+    showNotification('Error: PR info not available', 'error');
+    return;
+  }
+
+  // Show modal to edit/confirm comment
+  const modal = document.createElement('div');
+  modal.className = 'ai-review-modal';
+  modal.innerHTML = `
+    <div class="ai-review-modal-content">
+      <h4>Add Comment to PR</h4>
+      ${file ? `<p class="file-info">📄 ${escapeHtml(file)}${line ? `:${line}` : ''}</p>` : '<p class="file-info">📄 General comment (no specific file)</p>'}
+      <textarea id="comment-text" rows="5" placeholder="Enter your comment...">${escapeHtml(text)}</textarea>
+      <div class="modal-actions">
+        <button class="ai-review-btn" id="btn-post-comment">Post Comment</button>
+        <button class="ai-review-btn btn-secondary" id="btn-cancel-comment">Cancel</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  document.getElementById('btn-cancel-comment').addEventListener('click', () => {
+    modal.remove();
+  });
+
+  document.getElementById('btn-post-comment').addEventListener('click', async () => {
+    const commentText = document.getElementById('comment-text').value.trim();
+    if (!commentText) {
+      showNotification('Please enter a comment', 'error');
+      return;
+    }
+
+    const postBtn = document.getElementById('btn-post-comment');
+    postBtn.disabled = true;
+    postBtn.textContent = 'Posting...';
+
+    try {
+      const tokenResult = await chrome.runtime.sendMessage({ type: 'GET_AZURE_TOKEN' });
+      if (!tokenResult.token) {
+        showNotification('Azure DevOps token not configured', 'error');
+        return;
+      }
+
+      const result = await chrome.runtime.sendMessage({
+        type: 'POST_PR_COMMENT',
+        prInfo: currentPrInfo,
+        token: tokenResult.token,
+        comment: `🤖 **AI Review ${type.charAt(0).toUpperCase() + type.slice(1)}:**\n\n${commentText}`,
+        filePath: file || null,
+        line: line || null
+      });
+
+      if (result.success) {
+        showNotification('Comment posted successfully!', 'success');
+        modal.remove();
+        // Mark button as done
+        btn.textContent = '✓ Posted';
+        btn.disabled = true;
+        btn.classList.add('posted');
+      } else {
+        showNotification(`Failed to post: ${result.error}`, 'error');
+      }
+    } catch (error) {
+      showNotification(`Error: ${error.message}`, 'error');
+    } finally {
+      postBtn.disabled = false;
+      postBtn.textContent = 'Post Comment';
+    }
+  });
+
+  // Click outside to close
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  });
+}
+
+function showNotification(message, type = 'info') {
+  const notification = document.createElement('div');
+  notification.className = `ai-review-notification ${type}`;
+  notification.textContent = message;
+  document.body.appendChild(notification);
+
+  setTimeout(() => {
+    notification.remove();
+  }, 4000);
 }
 
 console.log('[AI Review] Content script loaded');

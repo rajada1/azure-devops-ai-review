@@ -87,6 +87,9 @@ async function handleMessage(message, sender) {
     case 'FETCH_PR_DIFF':
       return await fetchPRDiff(message.prInfo, message.token);
 
+    case 'POST_PR_COMMENT':
+      return await postPRComment(message.prInfo, message.token, message.comment, message.filePath, message.line);
+
     default:
       throw new Error(`Unknown message type: ${message.type}`);
   }
@@ -219,8 +222,23 @@ async function fetchPRDiff(prInfo, token) {
     }
 
     const prData = await prResponse.json();
+    const repoId = prData.repository?.id;
 
-    // Get iterations
+    // Get the actual diff between source and target
+    // First get the commits
+    const commitsResponse = await fetch(
+      `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/commits?api-version=7.1`,
+      { headers }
+    );
+
+    if (!commitsResponse.ok) {
+      throw new Error('Failed to fetch PR commits');
+    }
+
+    const commitsData = await commitsResponse.json();
+    const commits = commitsData.value || [];
+
+    // Get iterations for the diff
     const iterResponse = await fetch(
       `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations?api-version=7.1`,
       { headers }
@@ -237,10 +255,11 @@ async function fetchPRDiff(prInfo, token) {
       throw new Error('No iterations found for this pull request');
     }
 
-    // Get latest iteration changes
     const latestIteration = iterations[iterations.length - 1];
+
+    // Get the changes with diff content
     const changesResponse = await fetch(
-      `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations/${latestIteration.id}/changes?api-version=7.1`,
+      `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations/${latestIteration.id}/changes?$top=50&$compareTo=1&api-version=7.1`,
       { headers }
     );
 
@@ -251,23 +270,23 @@ async function fetchPRDiff(prInfo, token) {
     const changesData = await changesResponse.json();
     const changeEntries = changesData.changeEntries || [];
 
-    // Build a simple diff summary (file list with change types)
-    let diffContent = `Pull Request: ${prData.title}\n`;
-    diffContent += `Description: ${prData.description || 'No description'}\n\n`;
-    diffContent += `Source: ${prData.sourceRefName?.replace('refs/heads/', '')}\n`;
-    diffContent += `Target: ${prData.targetRefName?.replace('refs/heads/', '')}\n\n`;
-    diffContent += `Changed Files (${changeEntries.length}):\n`;
-    diffContent += '---\n\n';
+    // Build diff content - focus on actual changes only
+    let diffContent = `# Pull Request: ${prData.title}\n`;
+    if (prData.description) {
+      diffContent += `Description: ${prData.description}\n`;
+    }
+    diffContent += `\nBranch: ${prData.sourceRefName?.replace('refs/heads/', '')} → ${prData.targetRefName?.replace('refs/heads/', '')}\n`;
+    diffContent += `Files changed: ${changeEntries.length}\n\n---\n`;
 
-    // Token budget: ~3000 tokens = ~12000 chars for content
+    // Token budget
     const MAX_TOTAL_CHARS = 10000;
-    const MAX_FILE_CHARS = 1500;
-    const MAX_FILES = 8;
+    const MAX_FILE_CHARS = 2000;
+    const MAX_FILES = 10;
     
     let totalChars = diffContent.length;
-    
+
     // Prioritize code files
-    const codeExtensions = ['.js', '.ts', '.py', '.cs', '.java', '.go', '.rs', '.cpp', '.c', '.jsx', '.tsx', '.vue', '.rb'];
+    const codeExtensions = ['.js', '.ts', '.py', '.cs', '.java', '.go', '.rs', '.cpp', '.c', '.jsx', '.tsx', '.vue', '.rb', '.php'];
     const sortedEntries = [...changeEntries].sort((a, b) => {
       const pathA = a.item?.path || '';
       const pathB = b.item?.path || '';
@@ -278,11 +297,11 @@ async function fetchPRDiff(prInfo, token) {
       return 0;
     });
 
-    const filesToFetch = sortedEntries.slice(0, MAX_FILES);
-    
-    for (const entry of filesToFetch) {
+    const filesToProcess = sortedEntries.slice(0, MAX_FILES);
+
+    for (const entry of filesToProcess) {
       if (totalChars >= MAX_TOTAL_CHARS) {
-        diffContent += `\n(Truncated - reached size limit)\n`;
+        diffContent += `\n(Content truncated - size limit reached)\n`;
         break;
       }
 
@@ -290,45 +309,194 @@ async function fetchPRDiff(prInfo, token) {
       if (!path) continue;
 
       const changeType = getChangeTypeName(entry.changeType);
-      const fileHeader = `\n## ${changeType}: ${path}\n`;
       
-      diffContent += fileHeader;
-      totalChars += fileHeader.length;
-
+      // Try to get the actual diff for this file
       try {
-        if (changeType !== 'Delete') {
-          const contentResponse = await fetch(
-            `${apiBase}/git/repositories/${prInfo.repository}/items?path=${encodeURIComponent(path)}&versionDescriptor.version=${encodeURIComponent(prData.sourceRefName.replace('refs/heads/', ''))}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`,
-            { headers }
-          );
-
-          if (contentResponse.ok) {
-            const contentData = await contentResponse.json();
-            if (contentData.content) {
-              const remainingBudget = Math.min(MAX_FILE_CHARS, MAX_TOTAL_CHARS - totalChars - 100);
-              if (remainingBudget > 100) {
-                const truncatedContent = contentData.content.substring(0, remainingBudget);
-                const codeBlock = '```\n' + truncatedContent + (truncatedContent.length < contentData.content.length ? '\n...(truncated)' : '') + '\n```\n';
-                diffContent += codeBlock;
-                totalChars += codeBlock.length;
-              }
+        const diffResponse = await fetch(
+          `${apiBase}/git/repositories/${prInfo.repository}/diffs/commits?baseVersion=${encodeURIComponent(prData.targetRefName.replace('refs/heads/', ''))}&baseVersionType=branch&targetVersion=${encodeURIComponent(prData.sourceRefName.replace('refs/heads/', ''))}&targetVersionType=branch&diffCommonCommit=true&api-version=7.1`,
+          { 
+            headers: {
+              ...headers,
+              'Accept': 'text/plain'
             }
           }
+        );
+
+        // Get individual file diff
+        const fileDiffResponse = await fetch(
+          `${apiBase}/git/repositories/${prInfo.repository}/items?path=${encodeURIComponent(path)}&versionDescriptor.version=${encodeURIComponent(prData.sourceRefName.replace('refs/heads/', ''))}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`,
+          { headers }
+        );
+
+        const targetFileResponse = await fetch(
+          `${apiBase}/git/repositories/${prInfo.repository}/items?path=${encodeURIComponent(path)}&versionDescriptor.version=${encodeURIComponent(prData.targetRefName.replace('refs/heads/', ''))}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`,
+          { headers }
+        );
+
+        let fileSection = `\n## ${changeType}: ${path}\n`;
+
+        if (changeType === 'Add') {
+          // New file - show content
+          if (fileDiffResponse.ok) {
+            const newContent = await fileDiffResponse.json();
+            if (newContent.content) {
+              const truncated = newContent.content.substring(0, MAX_FILE_CHARS);
+              fileSection += '```diff\n' + truncated.split('\n').map(l => '+ ' + l).join('\n');
+              if (truncated.length < newContent.content.length) {
+                fileSection += '\n... (file truncated)';
+              }
+              fileSection += '\n```\n';
+            }
+          }
+        } else if (changeType === 'Delete') {
+          fileSection += '(File deleted)\n';
+        } else if (changeType === 'Edit') {
+          // For edits, try to show a simple diff
+          let sourceContent = '';
+          let targetContent = '';
+          
+          if (fileDiffResponse.ok) {
+            const src = await fileDiffResponse.json();
+            sourceContent = src.content || '';
+          }
+          if (targetFileResponse.ok) {
+            const tgt = await targetFileResponse.json();
+            targetContent = tgt.content || '';
+          }
+
+          if (sourceContent && targetContent) {
+            // Simple line-by-line comparison
+            const sourceLines = sourceContent.split('\n');
+            const targetLines = targetContent.split('\n');
+            
+            let diffLines = [];
+            const maxLines = Math.max(sourceLines.length, targetLines.length);
+            
+            for (let i = 0; i < Math.min(maxLines, 100); i++) {
+              const srcLine = sourceLines[i] || '';
+              const tgtLine = targetLines[i] || '';
+              
+              if (srcLine !== tgtLine) {
+                if (tgtLine && !srcLine) {
+                  diffLines.push(`+ ${srcLine}`);
+                } else if (srcLine && !tgtLine) {
+                  diffLines.push(`- ${tgtLine}`);
+                } else {
+                  diffLines.push(`- ${tgtLine}`);
+                  diffLines.push(`+ ${srcLine}`);
+                }
+              }
+            }
+
+            if (diffLines.length > 0) {
+              const diffText = diffLines.slice(0, 50).join('\n');
+              fileSection += '```diff\n' + diffText.substring(0, MAX_FILE_CHARS);
+              if (diffLines.length > 50) {
+                fileSection += '\n... (more changes)';
+              }
+              fileSection += '\n```\n';
+            } else {
+              fileSection += '(No text differences detected)\n';
+            }
+          } else if (sourceContent) {
+            // Just show new content preview
+            const preview = sourceContent.substring(0, MAX_FILE_CHARS);
+            fileSection += '```\n' + preview;
+            if (preview.length < sourceContent.length) {
+              fileSection += '\n... (truncated)';
+            }
+            fileSection += '\n```\n';
+          }
         }
+
+        if (totalChars + fileSection.length > MAX_TOTAL_CHARS) {
+          fileSection = fileSection.substring(0, MAX_TOTAL_CHARS - totalChars - 50) + '\n... (truncated)\n```\n';
+        }
+
+        diffContent += fileSection;
+        totalChars += fileSection.length;
+
       } catch (e) {
-        diffContent += `(Could not fetch content)\n`;
+        diffContent += `\n## ${changeType}: ${path}\n(Could not fetch diff)\n`;
       }
     }
 
     if (changeEntries.length > MAX_FILES) {
-      diffContent += `\n... and ${changeEntries.length - MAX_FILES} more files not shown\n`;
+      diffContent += `\n---\n... and ${changeEntries.length - MAX_FILES} more files not shown\n`;
     }
 
     return {
       success: true,
       diff: diffContent,
       prTitle: prData.title,
-      prDescription: prData.description
+      prDescription: prData.description,
+      prId: prInfo.pullRequestId,
+      repoId: repoId,
+      iterations: iterations
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+async function postPRComment(prInfo, token, comment, filePath = null, line = null) {
+  try {
+    let baseUrl;
+    if (prInfo.hostname && prInfo.hostname.includes('visualstudio.com')) {
+      baseUrl = `https://${prInfo.hostname}`;
+    } else {
+      baseUrl = `https://dev.azure.com/${prInfo.organization}`;
+    }
+
+    const apiBase = `${baseUrl}/${prInfo.project}/_apis`;
+    const headers = {
+      'Authorization': `Basic ${btoa(':' + token)}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    };
+
+    // Create a thread with the comment
+    const threadPayload = {
+      comments: [
+        {
+          parentCommentId: 0,
+          content: comment,
+          commentType: 1 // Text comment
+        }
+      ],
+      status: 1 // Active
+    };
+
+    // If file path and line are provided, add thread context for inline comment
+    if (filePath && line) {
+      threadPayload.threadContext = {
+        filePath: filePath,
+        rightFileStart: { line: line, offset: 1 },
+        rightFileEnd: { line: line, offset: 1 }
+      };
+    }
+
+    const response = await fetch(
+      `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/threads?api-version=7.1`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(threadPayload)
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      threadId: data.id
     };
   } catch (error) {
     return {
