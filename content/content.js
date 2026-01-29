@@ -1,13 +1,11 @@
 // content/content.js
 // Main content script for Azure DevOps PR pages
-
-import { AzureDevOpsAPI, extractPRInfoFromUrl, AzureDevOpsAuthError } from '../services/azure-devops-api.js';
+// Note: Content scripts don't support ES modules, so we inline needed functions
 
 let reviewPanel = null;
 let isReviewInProgress = false;
 let patchContent = null;
 let conversationHistory = [];
-let azureApi = null;
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
@@ -19,11 +17,16 @@ if (document.readyState === 'loading') {
 async function init() {
   console.log('[AI Review] Initializing on Azure DevOps PR page');
   
-  // Wait for page to fully load (Azure DevOps is a SPA)
-  await waitForPRPage();
+  // Wait a bit for SPA to load
+  await new Promise(resolve => setTimeout(resolve, 1000));
   
-  // Create the review panel
-  createReviewPanel();
+  const prInfo = extractPRInfoFromUrl();
+  if (prInfo) {
+    console.log('[AI Review] PR detected:', prInfo);
+    createReviewPanel();
+  } else {
+    console.log('[AI Review] Not on a PR page, waiting for navigation...');
+  }
   
   // Listen for messages from popup/background
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -38,22 +41,43 @@ async function init() {
   observeNavigation();
 }
 
-function waitForPRPage() {
-  return new Promise((resolve) => {
-    const check = () => {
-      const prInfo = extractPRInfoFromUrl();
-      if (prInfo) {
-        resolve();
-      } else {
-        setTimeout(check, 500);
-      }
-    };
-    check();
-  });
+/**
+ * Extract PR info from current URL
+ */
+function extractPRInfoFromUrl() {
+  const url = window.location.href;
+  const hostname = window.location.hostname;
+  
+  let match;
+  
+  if (hostname === 'dev.azure.com') {
+    match = url.match(/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/]+)\/pullrequest\/(\d+)/);
+    if (match) {
+      return {
+        organization: match[1],
+        project: match[2],
+        repository: match[3],
+        pullRequestId: match[4],
+        hostname: 'dev.azure.com'
+      };
+    }
+  } else if (hostname.includes('visualstudio.com')) {
+    match = url.match(/([^.]+)\.visualstudio\.com\/([^/]+)\/_git\/([^/]+)\/pullrequest\/(\d+)/);
+    if (match) {
+      return {
+        organization: match[1],
+        project: match[2],
+        repository: match[3],
+        pullRequestId: match[4],
+        hostname: hostname
+      };
+    }
+  }
+  
+  return null;
 }
 
 function observeNavigation() {
-  // Watch for URL changes (SPA navigation)
   let lastUrl = location.href;
   
   new MutationObserver(() => {
@@ -68,13 +92,13 @@ function onNavigate() {
   const prInfo = extractPRInfoFromUrl();
   
   if (prInfo) {
-    // On a PR page
     if (!reviewPanel) {
       createReviewPanel();
+    } else {
+      reviewPanel.classList.remove('hidden');
     }
     resetReviewState();
   } else {
-    // Not on a PR page
     if (reviewPanel) {
       reviewPanel.classList.add('hidden');
     }
@@ -94,6 +118,8 @@ function createReviewPanel() {
     return;
   }
 
+  console.log('[AI Review] Creating review panel');
+
   reviewPanel = document.createElement('div');
   reviewPanel.id = 'ai-review-panel';
   reviewPanel.className = 'ai-review-panel minimized';
@@ -108,8 +134,8 @@ function createReviewPanel() {
         <button class="ai-review-btn-icon" id="ai-review-refresh" title="New Review">
           ↻
         </button>
-        <button class="ai-review-btn-icon" id="ai-review-toggle" title="Minimize">
-          −
+        <button class="ai-review-btn-icon" id="ai-review-toggle" title="Expand">
+          +
         </button>
       </div>
     </div>
@@ -145,21 +171,29 @@ function createReviewPanel() {
 
   // Click on header to toggle if minimized
   document.querySelector('.ai-review-header').addEventListener('click', (e) => {
-    if (reviewPanel.classList.contains('minimized') && e.target.closest('.ai-review-actions') === null) {
+    if (reviewPanel.classList.contains('minimized') && !e.target.closest('.ai-review-actions')) {
       togglePanel();
     }
   });
+
+  console.log('[AI Review] Panel created successfully');
 }
 
 function togglePanel() {
+  if (!reviewPanel) return;
+  
   reviewPanel.classList.toggle('minimized');
   const toggleBtn = document.getElementById('ai-review-toggle');
-  toggleBtn.textContent = reviewPanel.classList.contains('minimized') ? '+' : '−';
+  if (toggleBtn) {
+    toggleBtn.textContent = reviewPanel.classList.contains('minimized') ? '+' : '−';
+  }
 }
 
 function updatePanelContent(state, data = null) {
   const content = document.getElementById('ai-review-content');
   const chat = document.getElementById('ai-review-chat');
+
+  if (!content) return;
 
   switch (state) {
     case 'ready':
@@ -171,8 +205,8 @@ function updatePanelContent(state, data = null) {
           </button>
         </div>
       `;
-      chat.style.display = 'none';
-      document.getElementById('ai-review-start').addEventListener('click', startReview);
+      if (chat) chat.style.display = 'none';
+      document.getElementById('ai-review-start')?.addEventListener('click', startReview);
       break;
 
     case 'loading':
@@ -182,27 +216,27 @@ function updatePanelContent(state, data = null) {
           <p>Analyzing code changes...</p>
         </div>
       `;
-      chat.style.display = 'none';
+      if (chat) chat.style.display = 'none';
       break;
 
     case 'no-provider':
       content.innerHTML = `
         <div class="ai-review-error">
           <p>⚠️ No AI provider configured</p>
-          <p>Click the extension icon and go to Settings to configure an AI provider.</p>
+          <p>Click the extension icon and go to <strong>Providers</strong> to add one.</p>
         </div>
       `;
-      chat.style.display = 'none';
+      if (chat) chat.style.display = 'none';
       break;
 
     case 'no-token':
       content.innerHTML = `
         <div class="ai-review-error">
           <p>⚠️ Azure DevOps token required</p>
-          <p>To access private repositories, please configure your Personal Access Token in the extension settings.</p>
+          <p>Go to extension <strong>Settings</strong> and add your Personal Access Token.</p>
         </div>
       `;
-      chat.style.display = 'none';
+      if (chat) chat.style.display = 'none';
       break;
 
     case 'error':
@@ -213,26 +247,28 @@ function updatePanelContent(state, data = null) {
           <button class="ai-review-btn" id="ai-review-retry">Retry</button>
         </div>
       `;
-      chat.style.display = 'none';
+      if (chat) chat.style.display = 'none';
       document.getElementById('ai-review-retry')?.addEventListener('click', startReview);
       break;
 
     case 'review':
       renderReview(data);
-      chat.style.display = 'flex';
+      if (chat) chat.style.display = 'flex';
       break;
   }
 }
 
 function renderReview(result) {
   const content = document.getElementById('ai-review-content');
+  if (!content) return;
+  
   const review = result.review;
 
   let html = `<div class="ai-review-result">`;
 
   // Provider info
   html += `<div class="ai-review-provider">
-    Reviewed by <strong>${result.provider}</strong> (${result.model})
+    Reviewed by <strong>${escapeHtml(result.provider || 'AI')}</strong> (${escapeHtml(result.model || 'unknown')})
   </div>`;
 
   // Metrics
@@ -260,7 +296,7 @@ function renderReview(result) {
   // Summary
   html += `<div class="ai-review-section">
     <h4>📝 Summary</h4>
-    <p>${escapeHtml(review.summary)}</p>
+    <p>${escapeHtml(review.summary || 'No summary available')}</p>
   </div>`;
 
   // Issues
@@ -269,9 +305,9 @@ function renderReview(result) {
       <h4>⚠️ Issues (${review.issues.length})</h4>
       <ul class="ai-review-list">
         ${review.issues.map(issue => `
-          <li class="severity-${issue.severity}">
-            <span class="badge ${issue.severity}">${issue.severity}</span>
-            <span>${escapeHtml(issue.description)}</span>
+          <li class="severity-${issue.severity || 'medium'}">
+            <span class="badge ${issue.severity || 'medium'}">${issue.severity || 'info'}</span>
+            <span>${escapeHtml(issue.description || '')}</span>
             ${issue.file ? `<span class="file">${escapeHtml(issue.file)}${issue.line ? `:${issue.line}` : ''}</span>` : ''}
           </li>
         `).join('')}
@@ -285,9 +321,9 @@ function renderReview(result) {
       <h4>🔒 Security Concerns (${review.security.length})</h4>
       <ul class="ai-review-list">
         ${review.security.map(sec => `
-          <li class="severity-${sec.severity}">
-            <span class="badge ${sec.severity}">${sec.severity}</span>
-            <span>${escapeHtml(sec.description)}</span>
+          <li class="severity-${sec.severity || 'medium'}">
+            <span class="badge ${sec.severity || 'medium'}">${sec.severity || 'warning'}</span>
+            <span>${escapeHtml(sec.description || '')}</span>
             ${sec.recommendation ? `<div class="recommendation">💡 ${escapeHtml(sec.recommendation)}</div>` : ''}
           </li>
         `).join('')}
@@ -303,7 +339,7 @@ function renderReview(result) {
         ${review.suggestions.map(sug => `
           <li>
             <span class="badge suggestion">${sug.type || 'tip'}</span>
-            <span>${escapeHtml(sug.description)}</span>
+            <span>${escapeHtml(sug.description || '')}</span>
           </li>
         `).join('')}
       </ul>
@@ -336,14 +372,14 @@ async function startReview() {
   }
 
   // Expand panel if minimized
-  if (reviewPanel.classList.contains('minimized')) {
+  if (reviewPanel && reviewPanel.classList.contains('minimized')) {
     togglePanel();
   }
 
   updatePanelContent('loading');
 
   try {
-    // Get Azure token
+    // Get Azure token from background
     const tokenResult = await chrome.runtime.sendMessage({ type: 'GET_AZURE_TOKEN' });
     
     if (!tokenResult.token) {
@@ -352,33 +388,30 @@ async function startReview() {
       return;
     }
 
-    // Initialize Azure API
-    azureApi = new AzureDevOpsAPI();
-    azureApi.init({
-      token: tokenResult.token,
-      organization: prInfo.organization,
-      project: prInfo.project,
-      repository: prInfo.repository,
-      hostname: prInfo.hostname
+    // Fetch PR diff via background script
+    const diffResult = await chrome.runtime.sendMessage({
+      type: 'FETCH_PR_DIFF',
+      prInfo,
+      token: tokenResult.token
     });
 
-    // Get PR diff
-    patchContent = await azureApi.getPullRequestDiff(prInfo.pullRequestId);
+    if (!diffResult.success) {
+      throw new Error(diffResult.error || 'Failed to fetch PR diff');
+    }
+
+    patchContent = diffResult.diff;
     
     if (!patchContent || patchContent.trim() === '') {
       throw new Error('No code changes found in this pull request');
     }
-
-    // Get PR details for context
-    const prDetails = await azureApi.getPullRequest(prInfo.pullRequestId);
 
     // Send to AI for review
     const result = await chrome.runtime.sendMessage({
       type: 'REVIEW_CODE',
       patchContent,
       options: {
-        prTitle: prDetails.title,
-        prDescription: prDetails.description
+        prTitle: diffResult.prTitle || '',
+        prDescription: diffResult.prDescription || ''
       }
     });
 
@@ -393,11 +426,8 @@ async function startReview() {
       conversationHistory = [];
     }
   } catch (error) {
-    if (error instanceof AzureDevOpsAuthError) {
-      updatePanelContent('error', { error: `Azure DevOps: ${error.message}` });
-    } else {
-      updatePanelContent('error', { error: error.message });
-    }
+    console.error('[AI Review] Error:', error);
+    updatePanelContent('error', { error: error.message });
   } finally {
     isReviewInProgress = false;
   }
@@ -405,6 +435,8 @@ async function startReview() {
 
 async function askQuestion() {
   const input = document.getElementById('ai-review-question');
+  if (!input) return;
+  
   const question = input.value.trim();
   
   if (!question || !patchContent) return;
@@ -413,6 +445,7 @@ async function askQuestion() {
   input.disabled = true;
 
   const messages = document.getElementById('ai-review-messages');
+  if (!messages) return;
   
   // Add user message
   messages.innerHTML += `
@@ -476,13 +509,14 @@ async function askQuestion() {
 }
 
 function escapeHtml(text) {
+  if (!text) return '';
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
 }
 
 function formatResponse(text) {
-  // Basic markdown-like formatting
+  if (!text) return '';
   return escapeHtml(text)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
