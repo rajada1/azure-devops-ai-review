@@ -131,10 +131,37 @@ export class BaseProvider {
   /**
    * Build the system prompt for code review
    * @param {string} language - Response language
+   * @param {Object} rules - Review rules
    * @returns {string}
    */
-  buildReviewPrompt(language = 'English') {
-    return `You are an expert code reviewer. Analyze the provided git patch and provide a comprehensive code review in ${language}.
+  buildReviewPrompt(language = 'English', rules = {}) {
+    // Build focus areas based on rules
+    const focusAreas = [];
+    if (rules.security !== false) focusAreas.push('Security vulnerabilities');
+    if (rules.performance !== false) focusAreas.push('Performance issues');
+    if (rules.cleanCode !== false) focusAreas.push('Clean code and best practices');
+    if (rules.bugs !== false) focusAreas.push('Potential bugs and logic errors');
+    if (rules.tests !== false) focusAreas.push('Test coverage suggestions');
+    if (rules.docs !== false) focusAreas.push('Documentation improvements');
+
+    const focusSection = focusAreas.length > 0 
+      ? `\n\nFocus your review on:\n${focusAreas.map(a => `- ${a}`).join('\n')}`
+      : '';
+
+    // Severity filter
+    let severityNote = '';
+    if (rules.severity === 'high') {
+      severityNote = '\n\nOnly report HIGH severity issues. Ignore medium and low severity items.';
+    } else if (rules.severity === 'medium') {
+      severityNote = '\n\nReport MEDIUM and HIGH severity issues. Ignore low severity items.';
+    }
+
+    // Custom instructions
+    const customInstructions = rules.customInstructions 
+      ? `\n\nAdditional project-specific guidelines:\n${rules.customInstructions}`
+      : '';
+
+    return `You are an expert code reviewer. Analyze the provided git patch and provide a comprehensive code review in ${language}.${focusSection}${severityNote}${customInstructions}
 
 Please analyze the git diff/patch and provide your review in this EXACT JSON format:
 

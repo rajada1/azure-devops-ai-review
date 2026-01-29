@@ -581,13 +581,18 @@ async function startReview() {
       throw new Error('No code changes found in this pull request');
     }
 
+    // Build PR URL for history
+    let prUrl = window.location.href;
+
     // Send to AI for review
     const result = await chrome.runtime.sendMessage({
       type: 'REVIEW_CODE',
       patchContent,
       options: {
+        prId: prInfo.pullRequestId,
         prTitle: diffResult.prTitle || '',
-        prDescription: diffResult.prDescription || ''
+        prDescription: diffResult.prDescription || '',
+        prUrl: prUrl
       }
     });
 

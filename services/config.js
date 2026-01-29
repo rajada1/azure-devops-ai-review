@@ -8,7 +8,9 @@ const STORAGE_KEYS = {
   ACTIVE_PROVIDER: 'activeProvider', // Currently selected provider ID
   AZURE_TOKEN: 'azureDevOpsToken',  // Azure DevOps PAT
   GITHUB_TOKEN: 'githubToken',      // GitHub Personal Access Token
-  SETTINGS: 'settings'              // General settings
+  SETTINGS: 'settings',             // General settings
+  RULES: 'reviewRules',             // Review rules and preferences
+  HISTORY: 'reviewHistory'          // Review history
 };
 
 const DEFAULT_SETTINGS = {
@@ -16,6 +18,20 @@ const DEFAULT_SETTINGS = {
   autoReview: false,
   showNotifications: true
 };
+
+const DEFAULT_RULES = {
+  security: true,
+  performance: true,
+  cleanCode: true,
+  bugs: true,
+  tests: true,
+  docs: true,
+  severity: 'medium',
+  ignorePatterns: [],
+  customInstructions: ''
+};
+
+const MAX_HISTORY_ITEMS = 50;
 
 export class ConfigService {
   /**
@@ -196,7 +212,85 @@ export class ConfigService {
       STORAGE_KEYS.PROVIDERS,
       STORAGE_KEYS.ACTIVE_PROVIDER,
       STORAGE_KEYS.AZURE_TOKEN,
-      STORAGE_KEYS.SETTINGS
+      STORAGE_KEYS.SETTINGS,
+      STORAGE_KEYS.RULES,
+      STORAGE_KEYS.HISTORY
     ]);
+  }
+
+  // ========== RULES ==========
+
+  /**
+   * Get review rules
+   * @returns {Promise<Object>}
+   */
+  static async getRules() {
+    const result = await chrome.storage.local.get(STORAGE_KEYS.RULES);
+    return { ...DEFAULT_RULES, ...result[STORAGE_KEYS.RULES] };
+  }
+
+  /**
+   * Save review rules
+   * @param {Object} rules
+   * @returns {Promise<void>}
+   */
+  static async saveRules(rules) {
+    await chrome.storage.local.set({ [STORAGE_KEYS.RULES]: rules });
+  }
+
+  // ========== HISTORY ==========
+
+  /**
+   * Get review history
+   * @returns {Promise<Array>}
+   */
+  static async getHistory() {
+    const result = await chrome.storage.local.get(STORAGE_KEYS.HISTORY);
+    return result[STORAGE_KEYS.HISTORY] || [];
+  }
+
+  /**
+   * Get a specific history item
+   * @param {string} id
+   * @returns {Promise<Object|null>}
+   */
+  static async getHistoryItem(id) {
+    const history = await this.getHistory();
+    return history.find(item => item.id === id) || null;
+  }
+
+  /**
+   * Save a history item
+   * @param {Object} item - { prId, prTitle, prUrl, review, timestamp }
+   * @returns {Promise<void>}
+   */
+  static async saveHistoryItem(item) {
+    const history = await this.getHistory();
+    
+    // Add unique ID if not present
+    if (!item.id) {
+      item.id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+    
+    // Add timestamp if not present
+    if (!item.timestamp) {
+      item.timestamp = Date.now();
+    }
+
+    // Add to beginning of array
+    history.unshift(item);
+
+    // Keep only MAX_HISTORY_ITEMS
+    const trimmed = history.slice(0, MAX_HISTORY_ITEMS);
+
+    await chrome.storage.local.set({ [STORAGE_KEYS.HISTORY]: trimmed });
+  }
+
+  /**
+   * Clear all history
+   * @returns {Promise<void>}
+   */
+  static async clearHistory() {
+    await chrome.storage.local.set({ [STORAGE_KEYS.HISTORY]: [] });
   }
 }

@@ -16,6 +16,8 @@
       <nav class="nav">
         <button class="nav-btn active" data-tab="status">Status</button>
         <button class="nav-btn" data-tab="providers">Providers</button>
+        <button class="nav-btn" data-tab="rules">Rules</button>
+        <button class="nav-btn" data-tab="history">History</button>
         <button class="nav-btn" data-tab="settings">Settings</button>
       </nav>
     </header>
@@ -57,6 +59,84 @@
         <div id="provider-form" class="provider-form hidden">
           <!-- Dynamic form fields -->
         </div>
+      </div>
+    </section>
+
+    <!-- Rules Tab -->
+    <section id="tab-rules" class="tab-content">
+      <div class="settings-group">
+        <h3>Review Focus</h3>
+        <p class="help-text">Select what aspects the AI should prioritize:</p>
+        <div class="checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="rule-security" checked>
+            <span>🔒 Security vulnerabilities</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="rule-performance" checked>
+            <span>⚡ Performance issues</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="rule-clean-code" checked>
+            <span>✨ Clean code / Best practices</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="rule-bugs" checked>
+            <span>🐛 Potential bugs</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="rule-tests" checked>
+            <span>🧪 Test coverage suggestions</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="rule-docs" checked>
+            <span>📝 Documentation</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>Severity Level</h3>
+        <p class="help-text">Minimum severity to report:</p>
+        <select id="rule-severity">
+          <option value="all">All issues</option>
+          <option value="low">Low and above</option>
+          <option value="medium" selected>Medium and above</option>
+          <option value="high">High only</option>
+        </select>
+      </div>
+
+      <div class="settings-group">
+        <h3>Ignore Patterns</h3>
+        <p class="help-text">File patterns to skip (one per line):</p>
+        <textarea id="rule-ignore" rows="4" placeholder="*.json
+*.md
+*.txt
+**/node_modules/**"></textarea>
+      </div>
+
+      <div class="settings-group">
+        <h3>Custom Instructions</h3>
+        <p class="help-text">Additional context for the AI reviewer:</p>
+        <textarea id="rule-custom" rows="4" placeholder="Example:
+- We use PascalCase for class names
+- All public methods need XML docs
+- Prefer async/await over callbacks"></textarea>
+      </div>
+
+      <div class="settings-group">
+        <button class="btn" id="btn-save-rules">💾 Save Rules</button>
+      </div>
+    </section>
+
+    <!-- History Tab -->
+    <section id="tab-history" class="tab-content">
+      <div class="history-header">
+        <h3>Review History</h3>
+        <button class="btn btn-small btn-danger" id="btn-clear-history">Clear All</button>
+      </div>
+      <div class="history-list" id="history-list">
+        <p class="empty-state">No reviews yet. Start reviewing PRs to build your history.</p>
       </div>
     </section>
 

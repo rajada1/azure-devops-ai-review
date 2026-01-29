@@ -81,11 +81,19 @@ function setupEventListeners() {
   document.getElementById('review-language').addEventListener('change', (e) => {
     updateSettings({ language: e.target.value });
   });
+
+  // Rules tab
+  document.getElementById('btn-save-rules').addEventListener('click', saveRules);
+
+  // History tab
+  document.getElementById('btn-clear-history').addEventListener('click', clearHistory);
 }
 
 function updateUI() {
   updateStatusTab();
   updateProvidersTab();
+  loadRules();
+  loadHistory();
 }
 
 function updateStatusTab() {
@@ -525,4 +533,147 @@ function getProviderInstructions(providerId) {
   };
 
   return instructions[providerId] || null;
+}
+
+// ========== RULES ==========
+
+async function loadRules() {
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'GET_RULES' });
+    const rules = result.rules || {};
+
+    // Focus checkboxes
+    document.getElementById('rule-security').checked = rules.security !== false;
+    document.getElementById('rule-performance').checked = rules.performance !== false;
+    document.getElementById('rule-clean-code').checked = rules.cleanCode !== false;
+    document.getElementById('rule-bugs').checked = rules.bugs !== false;
+    document.getElementById('rule-tests').checked = rules.tests !== false;
+    document.getElementById('rule-docs').checked = rules.docs !== false;
+
+    // Severity
+    if (rules.severity) {
+      document.getElementById('rule-severity').value = rules.severity;
+    }
+
+    // Ignore patterns
+    if (rules.ignorePatterns) {
+      document.getElementById('rule-ignore').value = rules.ignorePatterns.join('\n');
+    }
+
+    // Custom instructions
+    if (rules.customInstructions) {
+      document.getElementById('rule-custom').value = rules.customInstructions;
+    }
+  } catch (error) {
+    console.error('Failed to load rules:', error);
+  }
+}
+
+async function saveRules() {
+  const rules = {
+    security: document.getElementById('rule-security').checked,
+    performance: document.getElementById('rule-performance').checked,
+    cleanCode: document.getElementById('rule-clean-code').checked,
+    bugs: document.getElementById('rule-bugs').checked,
+    tests: document.getElementById('rule-tests').checked,
+    docs: document.getElementById('rule-docs').checked,
+    severity: document.getElementById('rule-severity').value,
+    ignorePatterns: document.getElementById('rule-ignore').value
+      .split('\n')
+      .map(p => p.trim())
+      .filter(p => p.length > 0),
+    customInstructions: document.getElementById('rule-custom').value.trim()
+  };
+
+  try {
+    await chrome.runtime.sendMessage({ type: 'SAVE_RULES', rules });
+    showToast('Rules saved successfully!', 'success');
+  } catch (error) {
+    console.error('Failed to save rules:', error);
+    showToast('Failed to save rules', 'error');
+  }
+}
+
+// ========== HISTORY ==========
+
+async function loadHistory() {
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
+    const history = result.history || [];
+
+    const list = document.getElementById('history-list');
+
+    if (history.length === 0) {
+      list.innerHTML = '<p class="empty-state">No reviews yet. Start reviewing PRs to build your history.</p>';
+      return;
+    }
+
+    list.innerHTML = history.map(item => {
+      const date = new Date(item.timestamp);
+      const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      const score = item.review?.metrics?.overallScore || '-';
+      const scoreClass = score >= 8 ? 'good' : score >= 5 ? 'medium' : score < 5 ? 'bad' : '';
+      
+      const issueCount = item.review?.issues?.length || 0;
+      const securityCount = item.review?.security?.length || 0;
+
+      return `
+        <div class="history-item" data-id="${item.id}">
+          <div class="history-item-header">
+            <span class="history-item-title" title="${escapeHtml(item.prTitle || 'Untitled PR')}">${escapeHtml(item.prTitle || 'Untitled PR')}</span>
+            <span class="history-item-date">${dateStr}</span>
+          </div>
+          <div class="history-item-meta">
+            <span class="history-item-score ${scoreClass}">Score: ${score}/10</span>
+            <span>⚠️ ${issueCount} issues</span>
+            <span>🔒 ${securityCount} security</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Click to view details
+    list.querySelectorAll('.history-item').forEach(item => {
+      item.addEventListener('click', () => viewHistoryItem(item.dataset.id));
+    });
+  } catch (error) {
+    console.error('Failed to load history:', error);
+  }
+}
+
+async function viewHistoryItem(id) {
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'GET_HISTORY_ITEM', id });
+    if (result.item) {
+      // For now, show summary in alert - could be a modal later
+      const item = result.item;
+      const summary = item.review?.summary || 'No summary available';
+      alert(`PR: ${item.prTitle}\n\nSummary:\n${summary}`);
+    }
+  } catch (error) {
+    console.error('Failed to get history item:', error);
+  }
+}
+
+async function clearHistory() {
+  if (!confirm('Are you sure you want to clear all review history?')) {
+    return;
+  }
+
+  try {
+    await chrome.runtime.sendMessage({ type: 'CLEAR_HISTORY' });
+    loadHistory();
+    showToast('History cleared', 'success');
+  } catch (error) {
+    console.error('Failed to clear history:', error);
+    showToast('Failed to clear history', 'error');
+  }
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }

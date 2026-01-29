@@ -90,6 +90,36 @@ async function handleMessage(message, sender) {
     case 'POST_PR_COMMENT':
       return await postPRComment(message.prInfo, message.token, message.comment, message.filePath, message.line);
 
+    case 'GET_RULES':
+      return {
+        success: true,
+        rules: await ConfigService.getRules()
+      };
+
+    case 'SAVE_RULES':
+      await ConfigService.saveRules(message.rules);
+      return { success: true };
+
+    case 'GET_HISTORY':
+      return {
+        success: true,
+        history: await ConfigService.getHistory()
+      };
+
+    case 'GET_HISTORY_ITEM':
+      return {
+        success: true,
+        item: await ConfigService.getHistoryItem(message.id)
+      };
+
+    case 'CLEAR_HISTORY':
+      await ConfigService.clearHistory();
+      return { success: true };
+
+    case 'SAVE_HISTORY_ITEM':
+      await ConfigService.saveHistoryItem(message.item);
+      return { success: true };
+
     default:
       throw new Error(`Unknown message type: ${message.type}`);
   }
@@ -125,13 +155,33 @@ async function performReview(patchContent, options = {}) {
   try {
     const provider = ProviderFactory.createFromConfig(providerConfig);
     const settings = await ConfigService.getSettings();
+    const rules = await ConfigService.getRules();
     
     const reviewOptions = {
       language: settings.language || 'English',
+      rules: rules,
       ...options
     };
 
-    return await provider.reviewCode(patchContent, reviewOptions);
+    const result = await provider.reviewCode(patchContent, reviewOptions);
+
+    // Save to history if successful
+    if (result.success && options.prTitle) {
+      try {
+        await ConfigService.saveHistoryItem({
+          prId: options.prId || null,
+          prTitle: options.prTitle,
+          prUrl: options.prUrl || null,
+          review: result.review,
+          provider: providerConfig.id,
+          model: providerConfig.model
+        });
+      } catch (e) {
+        console.error('Failed to save to history:', e);
+      }
+    }
+
+    return result;
   } catch (error) {
     return {
       success: false,

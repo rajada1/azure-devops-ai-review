@@ -178,9 +178,9 @@ export class GitHubCopilotProvider extends BaseProvider {
   }
 
   async reviewCode(patchContent, options = {}) {
-    const { language = 'English', prTitle = '', prDescription = '' } = options;
+    const { language = 'English', prTitle = '', prDescription = '', rules = {} } = options;
 
-    const systemPrompt = this.buildReviewPrompt(language);
+    const systemPrompt = this.buildReviewPrompt(language, rules);
     const userMessage = this._buildUserMessage(patchContent, prTitle, prDescription);
 
     try {
