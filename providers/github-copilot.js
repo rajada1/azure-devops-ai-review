@@ -14,7 +14,7 @@ export class GitHubCopilotProvider extends BaseProvider {
   }
 
   static get description() {
-    return 'Use your GitHub Copilot subscription (requires GitHub token)';
+    return 'Use your GitHub Copilot subscription (requires GitHub token with models scope)';
   }
 
   static get requiresApiKey() {
@@ -28,8 +28,21 @@ export class GitHubCopilotProvider extends BaseProvider {
   static get availableModels() {
     // Default models - will be replaced by dynamic fetch
     return [
-      { id: 'gpt-4o', name: 'GPT-4o', description: 'Loading models...' }
+      { id: 'openai/gpt-4o', name: 'GPT-4o', description: 'Loading models...' }
     ];
+  }
+
+  /**
+   * Get standard headers for GitHub Models API
+   * @private
+   */
+  static _getHeaders(token) {
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json'
+    };
   }
 
   /**
@@ -39,16 +52,15 @@ export class GitHubCopilotProvider extends BaseProvider {
    */
   static async fetchAvailableModels(token) {
     try {
-      const response = await fetch('https://models.inference.ai.azure.com/models', {
+      const response = await fetch('https://models.github.ai/catalog/models', {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
+        headers: GitHubCopilotProvider._getHeaders(token)
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const errorText = await response.text();
+        console.error('GitHub Models API error:', response.status, errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
       const data = await response.json();
@@ -57,11 +69,13 @@ export class GitHubCopilotProvider extends BaseProvider {
       console.error('Failed to fetch GitHub models:', error);
       // Return default models on error
       return [
-        { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal' },
-        { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and efficient' },
-        { id: 'claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', description: 'Anthropic via GitHub' },
-        { id: 'o1-preview', name: 'o1 Preview', description: 'Advanced reasoning' },
-        { id: 'o1-mini', name: 'o1 Mini', description: 'Fast reasoning' }
+        { id: 'openai/gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal' },
+        { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and efficient' },
+        { id: 'openai/gpt-4.1', name: 'GPT-4.1', description: 'Latest GPT-4.1' },
+        { id: 'openai/o1', name: 'o1', description: 'Advanced reasoning' },
+        { id: 'openai/o3-mini', name: 'o3 Mini', description: 'Fast reasoning' },
+        { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', description: 'Reasoning model' },
+        { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', description: 'Meta Llama' }
       ];
     }
   }
@@ -74,19 +88,21 @@ export class GitHubCopilotProvider extends BaseProvider {
     // Handle array response
     const models = Array.isArray(data) ? data : (data.models || data.data || []);
     
-    return models
-      .filter(model => {
-        // Filter for chat-completion models only
-        return model.task === 'chat-completion';
-      })
+    // Filter out embedding models - only keep text generation models
+    const textModels = models.filter(model => {
+      const outputModalities = model.supported_output_modalities || [];
+      return outputModalities.includes('text') && !outputModalities.includes('embeddings');
+    });
+
+    return textModels
       .map(model => ({
-        id: model.name || model.id,
-        name: model.friendly_name || model.name || model.id,
-        description: model.summary || model.description?.substring(0, 100) || ''
+        id: model.id,
+        name: model.name || model.id,
+        description: model.summary || ''
       }))
       .sort((a, b) => {
         // Prioritize popular models
-        const priority = ['gpt-4o', 'gpt-4', 'claude', 'o1', 'llama'];
+        const priority = ['gpt-4o', 'gpt-4.1', 'gpt-5', 'o1', 'o3', 'o4', 'claude', 'deepseek', 'llama'];
         const aPriority = priority.findIndex(p => a.id.toLowerCase().includes(p));
         const bPriority = priority.findIndex(p => b.id.toLowerCase().includes(p));
         if (aPriority !== -1 && bPriority === -1) return -1;
@@ -98,30 +114,31 @@ export class GitHubCopilotProvider extends BaseProvider {
 
   constructor(config = {}) {
     super({
-      baseUrl: 'https://api.githubcopilot.com',
+      baseUrl: 'https://models.github.ai',
       ...config
     });
   }
 
   /**
-   * Get the appropriate endpoint based on model
+   * Get standard headers for API calls
    */
-  _getEndpoint() {
-    // GitHub Models API endpoint
-    return 'https://models.inference.ai.azure.com';
+  _getHeaders() {
+    return {
+      'Authorization': `Bearer ${this.config.apiKey}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json'
+    };
   }
 
   async testConnection() {
     try {
       // Test with a minimal request
-      const response = await fetch(`${this._getEndpoint()}/chat/completions`, {
+      const response = await fetch('https://models.github.ai/inference/chat/completions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`
-        },
+        headers: this._getHeaders(),
         body: JSON.stringify({
-          model: this.config.model || 'gpt-4o-mini',
+          model: this.config.model || 'openai/gpt-4o-mini',
           messages: [{ role: 'user', content: 'Hi' }],
           max_tokens: 5
         })
@@ -134,20 +151,20 @@ export class GitHubCopilotProvider extends BaseProvider {
         if (response.status === 401) {
           return {
             success: false,
-            error: 'Invalid GitHub token. Make sure you have a valid Personal Access Token with Copilot access.'
+            error: 'Invalid GitHub token. Make sure you have a valid Personal Access Token with "models" scope.'
           };
         }
         
         if (response.status === 403) {
           return {
             success: false,
-            error: 'Access denied. Ensure your GitHub account has an active Copilot subscription.'
+            error: 'Access denied. Ensure your token has the "models" scope enabled.'
           };
         }
         
         return {
           success: false,
-          error: error.error?.message || `HTTP ${response.status}`
+          error: error.error?.message || error.message || `HTTP ${response.status}`
         };
       }
 
@@ -167,12 +184,9 @@ export class GitHubCopilotProvider extends BaseProvider {
     const userMessage = this._buildUserMessage(patchContent, prTitle, prDescription);
 
     try {
-      const response = await fetch(`${this._getEndpoint()}/chat/completions`, {
+      const response = await fetch('https://models.github.ai/inference/chat/completions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`
-        },
+        headers: this._getHeaders(),
         body: JSON.stringify({
           model: this.config.model,
           messages: [
@@ -186,7 +200,7 @@ export class GitHubCopilotProvider extends BaseProvider {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.error?.message || `HTTP ${response.status}`);
+        throw new Error(error.error?.message || error.message || `HTTP ${response.status}`);
       }
 
       const data = await response.json();
@@ -214,12 +228,9 @@ export class GitHubCopilotProvider extends BaseProvider {
     ];
 
     try {
-      const response = await fetch(`${this._getEndpoint()}/chat/completions`, {
+      const response = await fetch('https://models.github.ai/inference/chat/completions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`
-        },
+        headers: this._getHeaders(),
         body: JSON.stringify({
           model: this.config.model,
           messages,
@@ -230,7 +241,7 @@ export class GitHubCopilotProvider extends BaseProvider {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.error?.message || `HTTP ${response.status}`);
+        throw new Error(error.error?.message || error.message || `HTTP ${response.status}`);
       }
 
       const data = await response.json();

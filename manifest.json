@@ -12,7 +12,7 @@
   "host_permissions": [
     "https://dev.azure.com/*",
     "https://*.visualstudio.com/*",
-    "https://models.inference.ai.azure.com/*",
+    "https://models.github.ai/*",
     "https://api.github.com/*"
   ],
 
