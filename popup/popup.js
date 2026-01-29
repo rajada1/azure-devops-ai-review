@@ -498,11 +498,11 @@ function showToast(message, type = 'info') {
 function getProviderInstructions(providerId) {
   const instructions = {
     'github-copilot': `
-      <p><strong>Requires GitHub Copilot subscription</strong></p>
+      <p><strong>Uses GitHub Models API</strong></p>
       <p>Create a Personal Access Token at 
         <a href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a>
       </p>
-      <p>Required scope: <code>copilot</code></p>
+      <p>Required scope: <code>models:read</code></p>
     `,
     'openai': `
       <p>Get your API key at 
