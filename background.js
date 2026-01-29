@@ -223,73 +223,129 @@ async function fetchPRDiff(prInfo, token) {
 
     const prData = await prResponse.json();
     const repoId = prData.repository?.id;
+    
+    const sourceBranch = prData.sourceRefName?.replace('refs/heads/', '');
+    const targetBranch = prData.targetRefName?.replace('refs/heads/', '');
 
-    // Get the actual diff between source and target
-    // First get the commits
-    const commitsResponse = await fetch(
-      `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/commits?api-version=7.1`,
+    console.log('[AI Review] PR branches:', { sourceBranch, targetBranch });
+
+    // Method 1: Get diff between branches directly
+    const diffResponse = await fetch(
+      `${apiBase}/git/repositories/${prInfo.repository}/diffs/commits?baseVersion=${encodeURIComponent(targetBranch)}&baseVersionType=branch&targetVersion=${encodeURIComponent(sourceBranch)}&targetVersionType=branch&api-version=7.1`,
       { headers }
     );
 
-    if (!commitsResponse.ok) {
-      throw new Error('Failed to fetch PR commits');
+    let changeEntries = [];
+
+    if (diffResponse.ok) {
+      const diffData = await diffResponse.json();
+      changeEntries = diffData.changes || [];
+      console.log('[AI Review] Diff API returned', changeEntries.length, 'changes');
     }
 
-    const commitsData = await commitsResponse.json();
-    const commits = commitsData.value || [];
+    // Method 2: Fallback to iterations if diff API fails
+    if (changeEntries.length === 0) {
+      console.log('[AI Review] Trying iterations API...');
+      
+      const iterResponse = await fetch(
+        `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations?api-version=7.1`,
+        { headers }
+      );
 
-    // Get iterations for the diff
-    const iterResponse = await fetch(
-      `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations?api-version=7.1`,
-      { headers }
-    );
+      if (iterResponse.ok) {
+        const iterData = await iterResponse.json();
+        const iterations = iterData.value || [];
 
-    if (!iterResponse.ok) {
-      throw new Error('Failed to fetch PR iterations');
+        if (iterations.length > 0) {
+          const latestIteration = iterations[iterations.length - 1];
+          
+          // Don't use $compareTo if there's only 1 iteration
+          const changesUrl = iterations.length === 1
+            ? `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations/${latestIteration.id}/changes?api-version=7.1`
+            : `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations/${latestIteration.id}/changes?$compareTo=0&api-version=7.1`;
+
+          const changesResponse = await fetch(changesUrl, { headers });
+
+          if (changesResponse.ok) {
+            const changesData = await changesResponse.json();
+            changeEntries = changesData.changeEntries || [];
+            console.log('[AI Review] Iterations API returned', changeEntries.length, 'changes');
+          }
+        }
+      }
     }
 
-    const iterData = await iterResponse.json();
-    const iterations = iterData.value || [];
+    // Method 3: Get commits and their changes
+    if (changeEntries.length === 0) {
+      console.log('[AI Review] Trying commits API...');
+      
+      const commitsResponse = await fetch(
+        `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/commits?api-version=7.1`,
+        { headers }
+      );
 
-    if (iterations.length === 0) {
-      throw new Error('No iterations found for this pull request');
+      if (commitsResponse.ok) {
+        const commitsData = await commitsResponse.json();
+        const commits = commitsData.value || [];
+
+        // Get changes from first commit (usually has all PR changes)
+        for (const commit of commits.slice(0, 3)) {
+          const commitChangesResponse = await fetch(
+            `${apiBase}/git/repositories/${prInfo.repository}/commits/${commit.commitId}/changes?api-version=7.1`,
+            { headers }
+          );
+
+          if (commitChangesResponse.ok) {
+            const commitChangesData = await commitChangesResponse.json();
+            const commitChanges = commitChangesData.changes || [];
+            
+            // Merge unique files
+            for (const change of commitChanges) {
+              const path = change.item?.path;
+              if (path && !changeEntries.find(e => (e.item?.path || e.path) === path)) {
+                changeEntries.push(change);
+              }
+            }
+          }
+        }
+        console.log('[AI Review] Commits API returned', changeEntries.length, 'unique changes');
+      }
     }
 
-    const latestIteration = iterations[iterations.length - 1];
-
-    // Get the changes with diff content
-    const changesResponse = await fetch(
-      `${apiBase}/git/repositories/${prInfo.repository}/pullRequests/${prInfo.pullRequestId}/iterations/${latestIteration.id}/changes?$top=50&$compareTo=1&api-version=7.1`,
-      { headers }
-    );
-
-    if (!changesResponse.ok) {
-      throw new Error('Failed to fetch PR changes');
-    }
-
-    const changesData = await changesResponse.json();
-    const changeEntries = changesData.changeEntries || [];
-
-    // Build diff content - focus on actual changes only
+    // Build diff content
     let diffContent = `# Pull Request: ${prData.title}\n`;
     if (prData.description) {
       diffContent += `Description: ${prData.description}\n`;
     }
-    diffContent += `\nBranch: ${prData.sourceRefName?.replace('refs/heads/', '')} → ${prData.targetRefName?.replace('refs/heads/', '')}\n`;
+    diffContent += `\nBranch: ${sourceBranch} → ${targetBranch}\n`;
     diffContent += `Files changed: ${changeEntries.length}\n\n---\n`;
 
+    if (changeEntries.length === 0) {
+      diffContent += '\n⚠️ No file changes detected. This might be a permissions issue or the PR has no code changes.\n';
+      
+      return {
+        success: true,
+        diff: diffContent,
+        prTitle: prData.title,
+        prDescription: prData.description,
+        prId: prInfo.pullRequestId,
+        repoId: repoId,
+        iterations: []
+      };
+    }
+
     // Token budget
-    const MAX_TOTAL_CHARS = 10000;
-    const MAX_FILE_CHARS = 2000;
+    const MAX_TOTAL_CHARS = 12000;
+    const MAX_FILE_CHARS = 2500;
     const MAX_FILES = 10;
     
     let totalChars = diffContent.length;
 
     // Prioritize code files
-    const codeExtensions = ['.js', '.ts', '.py', '.cs', '.java', '.go', '.rs', '.cpp', '.c', '.jsx', '.tsx', '.vue', '.rb', '.php'];
+    const codeExtensions = ['.js', '.ts', '.py', '.cs', '.java', '.go', '.rs', '.cpp', '.c', '.jsx', '.tsx', '.vue', '.rb', '.php', '.swift', '.kt'];
     const sortedEntries = [...changeEntries].sort((a, b) => {
-      const pathA = a.item?.path || '';
-      const pathB = b.item?.path || '';
+      const pathA = a.item?.path || a.path || '';
+      const pathB = b.item?.path || b.path || '';
       const isCodeA = codeExtensions.some(ext => pathA.endsWith(ext));
       const isCodeB = codeExtensions.some(ext => pathB.endsWith(ext));
       if (isCodeA && !isCodeB) return -1;
@@ -305,119 +361,104 @@ async function fetchPRDiff(prInfo, token) {
         break;
       }
 
-      const path = entry.item?.path || entry.originalPath;
+      const path = entry.item?.path || entry.path;
       if (!path) continue;
 
       const changeType = getChangeTypeName(entry.changeType);
       
-      // Try to get the actual diff for this file
       try {
-        const diffResponse = await fetch(
-          `${apiBase}/git/repositories/${prInfo.repository}/diffs/commits?baseVersion=${encodeURIComponent(prData.targetRefName.replace('refs/heads/', ''))}&baseVersionType=branch&targetVersion=${encodeURIComponent(prData.sourceRefName.replace('refs/heads/', ''))}&targetVersionType=branch&diffCommonCommit=true&api-version=7.1`,
-          { 
-            headers: {
-              ...headers,
-              'Accept': 'text/plain'
-            }
-          }
-        );
-
-        // Get individual file diff
-        const fileDiffResponse = await fetch(
-          `${apiBase}/git/repositories/${prInfo.repository}/items?path=${encodeURIComponent(path)}&versionDescriptor.version=${encodeURIComponent(prData.sourceRefName.replace('refs/heads/', ''))}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`,
-          { headers }
-        );
-
-        const targetFileResponse = await fetch(
-          `${apiBase}/git/repositories/${prInfo.repository}/items?path=${encodeURIComponent(path)}&versionDescriptor.version=${encodeURIComponent(prData.targetRefName.replace('refs/heads/', ''))}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`,
-          { headers }
-        );
-
         let fileSection = `\n## ${changeType}: ${path}\n`;
 
-        if (changeType === 'Add') {
-          // New file - show content
-          if (fileDiffResponse.ok) {
-            const newContent = await fileDiffResponse.json();
-            if (newContent.content) {
-              const truncated = newContent.content.substring(0, MAX_FILE_CHARS);
-              fileSection += '```diff\n' + truncated.split('\n').map(l => '+ ' + l).join('\n');
-              if (truncated.length < newContent.content.length) {
-                fileSection += '\n... (file truncated)';
-              }
-              fileSection += '\n```\n';
-            }
-          }
-        } else if (changeType === 'Delete') {
+        if (changeType === 'Delete') {
           fileSection += '(File deleted)\n';
-        } else if (changeType === 'Edit') {
-          // For edits, try to show a simple diff
-          let sourceContent = '';
-          let targetContent = '';
-          
-          if (fileDiffResponse.ok) {
-            const src = await fileDiffResponse.json();
-            sourceContent = src.content || '';
-          }
-          if (targetFileResponse.ok) {
-            const tgt = await targetFileResponse.json();
-            targetContent = tgt.content || '';
-          }
+        } else {
+          // Fetch file content from source branch
+          const contentResponse = await fetch(
+            `${apiBase}/git/repositories/${prInfo.repository}/items?path=${encodeURIComponent(path)}&versionDescriptor.version=${encodeURIComponent(sourceBranch)}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`,
+            { headers }
+          );
 
-          if (sourceContent && targetContent) {
-            // Simple line-by-line comparison
-            const sourceLines = sourceContent.split('\n');
-            const targetLines = targetContent.split('\n');
-            
-            let diffLines = [];
-            const maxLines = Math.max(sourceLines.length, targetLines.length);
-            
-            for (let i = 0; i < Math.min(maxLines, 100); i++) {
-              const srcLine = sourceLines[i] || '';
-              const tgtLine = targetLines[i] || '';
+          if (contentResponse.ok) {
+            const contentData = await contentResponse.json();
+            if (contentData.content) {
+              const content = contentData.content;
               
-              if (srcLine !== tgtLine) {
-                if (tgtLine && !srcLine) {
-                  diffLines.push(`+ ${srcLine}`);
-                } else if (srcLine && !tgtLine) {
-                  diffLines.push(`- ${tgtLine}`);
+              if (changeType === 'Add') {
+                // New file - show as additions
+                const truncated = content.substring(0, MAX_FILE_CHARS);
+                fileSection += '```diff\n' + truncated.split('\n').map(l => '+ ' + l).join('\n');
+                if (truncated.length < content.length) {
+                  fileSection += '\n... (file truncated)';
+                }
+                fileSection += '\n```\n';
+              } else {
+                // Edit - try to get target for comparison
+                const targetResponse = await fetch(
+                  `${apiBase}/git/repositories/${prInfo.repository}/items?path=${encodeURIComponent(path)}&versionDescriptor.version=${encodeURIComponent(targetBranch)}&versionDescriptor.versionType=branch&includeContent=true&api-version=7.1`,
+                  { headers }
+                );
+
+                if (targetResponse.ok) {
+                  const targetData = await targetResponse.json();
+                  const targetContent = targetData.content || '';
+                  
+                  // Simple diff
+                  const sourceLines = content.split('\n');
+                  const targetLines = targetContent.split('\n');
+                  
+                  let diffLines = [];
+                  const maxLen = Math.max(sourceLines.length, targetLines.length);
+                  
+                  for (let i = 0; i < Math.min(maxLen, 150); i++) {
+                    const src = sourceLines[i];
+                    const tgt = targetLines[i];
+                    
+                    if (src !== tgt) {
+                      if (tgt !== undefined) diffLines.push(`- ${tgt}`);
+                      if (src !== undefined) diffLines.push(`+ ${src}`);
+                    }
+                  }
+
+                  if (diffLines.length > 0) {
+                    const diffText = diffLines.slice(0, 80).join('\n').substring(0, MAX_FILE_CHARS);
+                    fileSection += '```diff\n' + diffText;
+                    if (diffLines.length > 80) {
+                      fileSection += '\n... (more changes)';
+                    }
+                    fileSection += '\n```\n';
+                  } else {
+                    // Files seem identical, show snippet of new content
+                    const preview = content.substring(0, 500);
+                    fileSection += '```\n' + preview + '\n... (preview)\n```\n';
+                  }
                 } else {
-                  diffLines.push(`- ${tgtLine}`);
-                  diffLines.push(`+ ${srcLine}`);
+                  // Can't get target, just show new content
+                  const preview = content.substring(0, MAX_FILE_CHARS);
+                  fileSection += '```\n' + preview;
+                  if (preview.length < content.length) {
+                    fileSection += '\n... (truncated)';
+                  }
+                  fileSection += '\n```\n';
                 }
               }
-            }
-
-            if (diffLines.length > 0) {
-              const diffText = diffLines.slice(0, 50).join('\n');
-              fileSection += '```diff\n' + diffText.substring(0, MAX_FILE_CHARS);
-              if (diffLines.length > 50) {
-                fileSection += '\n... (more changes)';
-              }
-              fileSection += '\n```\n';
             } else {
-              fileSection += '(No text differences detected)\n';
+              fileSection += '(Binary or empty file)\n';
             }
-          } else if (sourceContent) {
-            // Just show new content preview
-            const preview = sourceContent.substring(0, MAX_FILE_CHARS);
-            fileSection += '```\n' + preview;
-            if (preview.length < sourceContent.length) {
-              fileSection += '\n... (truncated)';
-            }
-            fileSection += '\n```\n';
+          } else {
+            fileSection += '(Could not fetch content)\n';
           }
         }
 
         if (totalChars + fileSection.length > MAX_TOTAL_CHARS) {
-          fileSection = fileSection.substring(0, MAX_TOTAL_CHARS - totalChars - 50) + '\n... (truncated)\n```\n';
+          fileSection = fileSection.substring(0, MAX_TOTAL_CHARS - totalChars - 50) + '\n...(truncated)\n```\n';
         }
 
         diffContent += fileSection;
         totalChars += fileSection.length;
 
       } catch (e) {
-        diffContent += `\n## ${changeType}: ${path}\n(Could not fetch diff)\n`;
+        console.error('[AI Review] Error processing file:', path, e);
+        diffContent += `\n## ${changeType}: ${path}\n(Error fetching content)\n`;
       }
     }
 
@@ -432,9 +473,10 @@ async function fetchPRDiff(prInfo, token) {
       prDescription: prData.description,
       prId: prInfo.pullRequestId,
       repoId: repoId,
-      iterations: iterations
+      iterations: []
     };
   } catch (error) {
+    console.error('[AI Review] fetchPRDiff error:', error);
     return {
       success: false,
       error: error.message
