@@ -142,12 +142,32 @@ function updateProvidersTab() {
             <div class="provider-item-model">${provider.model}</div>
           </div>
           <div class="provider-item-actions">
-            ${!isActive ? `<button class="btn btn-small" onclick="setActiveProvider('${provider.id}')">Use</button>` : '<span class="badge">Active</span>'}
-            <button class="btn-icon btn-danger" onclick="removeProvider('${provider.id}')" title="Remove">🗑️</button>
+            ${!isActive ? `<button class="btn btn-small btn-use-provider" data-provider-id="${provider.id}">Use</button>` : '<span class="badge">Active</span>'}
+            <button class="btn-icon btn-danger btn-remove-provider" data-provider-id="${provider.id}" title="Remove">🗑️</button>
           </div>
         </div>
       `;
     }).join('');
+
+    // Add event listeners for Use buttons
+    list.querySelectorAll('.btn-use-provider').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const providerId = btn.dataset.providerId;
+        setActiveProvider(providerId);
+      });
+    });
+
+    // Add event listeners for Remove buttons
+    list.querySelectorAll('.btn-remove-provider').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const providerId = btn.dataset.providerId;
+        removeProvider(providerId);
+      });
+    });
   }
 
   // Populate provider select
@@ -407,8 +427,8 @@ function getProviderFormData(providerId) {
   };
 }
 
-// Global functions for inline onclick handlers
-window.setActiveProvider = async function(providerId) {
+// Provider action functions
+async function setActiveProvider(providerId) {
   try {
     await chrome.runtime.sendMessage({
       type: 'SET_ACTIVE_PROVIDER',
@@ -420,9 +440,9 @@ window.setActiveProvider = async function(providerId) {
   } catch (error) {
     showToast('Failed to set provider', 'error');
   }
-};
+}
 
-window.removeProvider = async function(providerId) {
+async function removeProvider(providerId) {
   if (!confirm('Remove this provider?')) return;
 
   try {
@@ -436,7 +456,7 @@ window.removeProvider = async function(providerId) {
   } catch (error) {
     showToast('Failed to remove provider', 'error');
   }
-};
+}
 
 async function testConnection() {
   if (!activeProviderId) {
