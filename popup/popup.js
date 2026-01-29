@@ -47,9 +47,6 @@ async function loadData() {
     if (limitsResult.maxFiles) {
       document.getElementById('max-files').value = limitsResult.maxFiles;
     }
-    if (limitsResult.maxChars) {
-      document.getElementById('max-chars').value = limitsResult.maxChars;
-    }
   } catch (error) {
     console.error('Failed to load data:', error);
     showToast('Failed to load settings', 'error');
@@ -103,13 +100,11 @@ function setupEventListeners() {
 
 async function saveDiffLimits() {
   const maxFiles = parseInt(document.getElementById('max-files').value);
-  const maxChars = parseInt(document.getElementById('max-chars').value);
   
   try {
     await chrome.runtime.sendMessage({
       type: 'SET_DIFF_LIMITS',
-      maxFiles,
-      maxChars
+      maxFiles
     });
     showToast('Diff limits saved!', 'success');
   } catch (error) {

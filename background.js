@@ -400,18 +400,15 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
       };
     }
 
-    // Get diff limits from settings
+    // Get diff limits from settings (only file limit matters now)
     const diffLimits = await ConfigService.getDiffLimits();
-    const MAX_TOTAL_CHARS = diffLimits.maxChars || 60000;
-    const MAX_FILE_CHARS = 3500;  // Per-file limit
+    const MAX_FILE_CHARS = 5000;  // Per-file limit to avoid huge single files
     const MAX_FILES = diffLimits.maxFiles || 40;
     
-    let totalChars = diffContent.length;
-    let truncatedFiles = 0;
     let skippedFiles = 0;
 
     // Prioritize code files
-    const codeExtensions = ['.js', '.ts', '.py', '.cs', '.java', '.go', '.rs', '.cpp', '.c', '.jsx', '.tsx', '.vue', '.rb', '.php', '.swift', '.kt'];
+    const codeExtensions = ['.js', '.ts', '.py', '.cs', '.java', '.go', '.rs', '.cpp', '.c', '.jsx', '.tsx', '.vue', '.rb', '.php', '.swift', '.kt', '.dart'];
     const sortedEntries = [...changeEntries].sort((a, b) => {
       const pathA = a.item?.path || a.path || '';
       const pathB = b.item?.path || b.path || '';
@@ -425,11 +422,6 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
     const filesToProcess = sortedEntries.slice(0, MAX_FILES);
 
     for (const entry of filesToProcess) {
-      if (totalChars >= MAX_TOTAL_CHARS) {
-        diffContent += `\n(Content truncated - size limit reached)\n`;
-        break;
-      }
-
       const path = entry.item?.path || entry.path;
       if (!path) continue;
 
@@ -479,10 +471,7 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
                 }
                 fileSection += '\n```\n';
                 
-                if (totalChars + fileSection.length <= MAX_TOTAL_CHARS) {
-                  diffContent += fileSection;
-                  totalChars += fileSection.length;
-                }
+                diffContent += fileSection;
                 continue;
               }
             }
@@ -545,13 +534,7 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
           }
         }
 
-        if (totalChars + fileSection.length > MAX_TOTAL_CHARS) {
-          fileSection = fileSection.substring(0, MAX_TOTAL_CHARS - totalChars - 50) + '\n... (file truncated)\n';
-          truncatedFiles++;
-        }
-
         diffContent += fileSection;
-        totalChars += fileSection.length;
 
       } catch (e) {
         console.error('[AI Review] Error processing file:', path, e);
@@ -562,15 +545,8 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
     // Add summary of what was included/excluded
     skippedFiles = changeEntries.length - filesToProcess.length;
     
-    let summaryNotes = [];
     if (skippedFiles > 0) {
-      summaryNotes.push(`${skippedFiles} files not shown (limit: ${MAX_FILES})`);
-    }
-    if (truncatedFiles > 0) {
-      summaryNotes.push(`${truncatedFiles} files were truncated`);
-    }
-    if (summaryNotes.length > 0) {
-      diffContent += `\n---\n⚠️ ${summaryNotes.join(', ')}\n`;
+      diffContent += `\n---\n⚠️ ${skippedFiles} files not shown (limit: ${MAX_FILES})\n`;
     }
 
     // Save diff to storage for the diff viewer page
@@ -584,7 +560,6 @@ async function fetchPRDiff(prInfo, token, rules = {}) {
           targetBranch,
           filesChanged: changeEntries.length,
           filesIncluded: filesToProcess.length,
-          filesTruncated: truncatedFiles,
           prId: prInfo.pullRequestId
         }
       });
