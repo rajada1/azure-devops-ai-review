@@ -172,6 +172,7 @@ function onProviderSelect(e) {
       <div class="form-field">
         <label for="provider-apikey">${keyLabel}</label>
         <input type="password" id="provider-apikey" placeholder="${keyPlaceholder}" required>
+        ${providerId === 'github-copilot' ? '<button class="btn btn-small" id="btn-load-models" type="button">Load Models</button>' : ''}
       </div>
     `;
   }
@@ -186,8 +187,17 @@ function onProviderSelect(e) {
     `;
   }
 
-  // Model select
-  if (provider.availableModels.length > 0) {
+  // Model select - for GitHub Copilot, show placeholder until models are loaded
+  if (providerId === 'github-copilot') {
+    html += `
+      <div class="form-field" id="model-field">
+        <label for="provider-model">Model</label>
+        <select id="provider-model" disabled>
+          <option value="">Enter token and click "Load Models"</option>
+        </select>
+      </div>
+    `;
+  } else if (provider.availableModels.length > 0) {
     html += `
       <div class="form-field">
         <label for="provider-model">Model</label>
@@ -202,7 +212,7 @@ function onProviderSelect(e) {
 
   html += `
     <div class="form-field">
-      <button class="btn" id="btn-add-provider">Add Provider</button>
+      <button class="btn" id="btn-add-provider" ${providerId === 'github-copilot' ? 'disabled' : ''}>Add Provider</button>
       <button class="btn btn-secondary" id="btn-test-provider">Test</button>
     </div>
   `;
@@ -213,6 +223,54 @@ function onProviderSelect(e) {
   // Event listeners
   document.getElementById('btn-add-provider').addEventListener('click', () => addProvider(providerId));
   document.getElementById('btn-test-provider').addEventListener('click', () => testNewProvider(providerId));
+  
+  // GitHub Copilot: load models button
+  if (providerId === 'github-copilot') {
+    document.getElementById('btn-load-models').addEventListener('click', loadGitHubModels);
+  }
+}
+
+async function loadGitHubModels() {
+  const tokenInput = document.getElementById('provider-apikey');
+  const token = tokenInput.value.trim();
+  
+  if (!token) {
+    showToast('Please enter your GitHub token first', 'error');
+    return;
+  }
+
+  const loadBtn = document.getElementById('btn-load-models');
+  const modelSelect = document.getElementById('provider-model');
+  const addBtn = document.getElementById('btn-add-provider');
+  
+  loadBtn.disabled = true;
+  loadBtn.textContent = 'Loading...';
+  modelSelect.innerHTML = '<option value="">Loading models...</option>';
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: 'FETCH_GITHUB_MODELS',
+      token
+    });
+
+    if (result.success && result.models.length > 0) {
+      modelSelect.innerHTML = result.models.map(m => 
+        `<option value="${m.id}">${m.name}${m.description ? ` - ${m.description}` : ''}</option>`
+      ).join('');
+      modelSelect.disabled = false;
+      addBtn.disabled = false;
+      showToast(`Loaded ${result.models.length} models`, 'success');
+    } else {
+      modelSelect.innerHTML = '<option value="">No models found</option>';
+      showToast(result.error || 'No models available', 'error');
+    }
+  } catch (error) {
+    modelSelect.innerHTML = '<option value="">Error loading models</option>';
+    showToast('Failed to load models', 'error');
+  } finally {
+    loadBtn.disabled = false;
+    loadBtn.textContent = 'Load Models';
+  }
 }
 
 async function addProvider(providerId) {

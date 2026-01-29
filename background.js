@@ -1,7 +1,7 @@
 // background.js - Service Worker
 // Handles communication between content scripts and popup
 
-import { ProviderFactory } from './providers/provider-factory.js';
+import { ProviderFactory, GitHubCopilotProvider } from './providers/provider-factory.js';
 import { ConfigService } from './services/config.js';
 
 // Handle extension icon click
@@ -70,6 +70,9 @@ async function handleMessage(message, sender) {
 
     case 'CHAT':
       return await handleChat(message.patchContent, message.conversationHistory, message.options);
+
+    case 'FETCH_GITHUB_MODELS':
+      return await fetchGitHubModels(message.token);
 
     default:
       throw new Error(`Unknown message type: ${message.type}`);
@@ -149,6 +152,22 @@ async function handleChat(patchContent, conversationHistory, options = {}) {
     return {
       success: false,
       error: error.message
+    };
+  }
+}
+
+async function fetchGitHubModels(token) {
+  try {
+    const models = await GitHubCopilotProvider.fetchAvailableModels(token);
+    return {
+      success: true,
+      models
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      models: []
     };
   }
 }

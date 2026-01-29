@@ -26,13 +26,82 @@ export class GitHubCopilotProvider extends BaseProvider {
   }
 
   static get availableModels() {
+    // Default models - will be replaced by dynamic fetch
     return [
-      { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and efficient' },
-      { id: 'claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', description: 'Anthropic via GitHub' },
-      { id: 'o1-preview', name: 'o1 Preview', description: 'Advanced reasoning' },
-      { id: 'o1-mini', name: 'o1 Mini', description: 'Fast reasoning' }
+      { id: 'gpt-4o', name: 'GPT-4o', description: 'Loading models...' }
     ];
+  }
+
+  /**
+   * Fetch available models from GitHub Models API
+   * @param {string} token - GitHub Personal Access Token
+   * @returns {Promise<Array<{id: string, name: string, description: string}>>}
+   */
+  static async fetchAvailableModels(token) {
+    try {
+      const response = await fetch('https://api.github.com/copilot/models', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        // Fallback: try the models inference endpoint
+        const fallbackResponse = await fetch('https://models.inference.ai.azure.com/models', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          }
+        });
+
+        if (!fallbackResponse.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const fallbackData = await fallbackResponse.json();
+        return GitHubCopilotProvider._parseModelsResponse(fallbackData);
+      }
+
+      const data = await response.json();
+      return GitHubCopilotProvider._parseModelsResponse(data);
+    } catch (error) {
+      console.error('Failed to fetch GitHub models:', error);
+      // Return default models on error
+      return [
+        { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal' },
+        { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and efficient' },
+        { id: 'claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', description: 'Anthropic via GitHub' },
+        { id: 'o1-preview', name: 'o1 Preview', description: 'Advanced reasoning' },
+        { id: 'o1-mini', name: 'o1 Mini', description: 'Fast reasoning' }
+      ];
+    }
+  }
+
+  /**
+   * Parse models response from GitHub API
+   * @private
+   */
+  static _parseModelsResponse(data) {
+    // Handle different response formats
+    const models = Array.isArray(data) ? data : (data.models || data.data || []);
+    
+    return models
+      .filter(model => {
+        // Filter for chat-capable models
+        const id = model.id || model.name || '';
+        const capabilities = model.capabilities || {};
+        return capabilities.chat || capabilities.completion || 
+               id.includes('gpt') || id.includes('claude') || id.includes('o1');
+      })
+      .map(model => ({
+        id: model.id || model.name,
+        name: model.friendly_name || model.display_name || model.name || model.id,
+        description: model.description || model.summary || ''
+      }))
+      .slice(0, 20); // Limit to 20 models
   }
 
   constructor(config = {}) {
