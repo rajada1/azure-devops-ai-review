@@ -143,12 +143,33 @@ function onNavigate() {
   const prInfo = extractPRInfoFromUrl();
   
   if (prInfo) {
+    // Check if we're still on the same PR
+    const samePR = currentPrInfo && 
+                   currentPrInfo.pullRequestId === prInfo.pullRequestId &&
+                   currentPrInfo.repository === prInfo.repository;
+    
     if (!reviewPanel) {
+      currentPrInfo = prInfo;
       createReviewPanel();
+      // Try to restore state for this PR
+      if (loadState() && lastReviewResult) {
+        updatePanelContent('review', lastReviewResult);
+      }
     } else {
       reviewPanel.classList.remove('hidden');
+      
+      // Only reset if we navigated to a DIFFERENT PR
+      if (!samePR) {
+        currentPrInfo = prInfo;
+        // Try to load state for the new PR
+        if (loadState() && lastReviewResult) {
+          updatePanelContent('review', lastReviewResult);
+        } else {
+          resetReviewState();
+        }
+      }
+      // If same PR, don't reset - keep the current review visible
     }
-    resetReviewState();
   } else {
     if (reviewPanel) {
       reviewPanel.classList.add('hidden');
