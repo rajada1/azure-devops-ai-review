@@ -273,7 +273,17 @@ ${language !== 'English' ? `IMPORTANT: Respond entirely in ${language}.` : ''}`;
   parseReviewResponse(responseText) {
     try {
       // Try to extract JSON from the response
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      // Handle cases where JSON might be wrapped in markdown code blocks
+      let jsonText = responseText;
+      
+      // Remove markdown code blocks if present
+      const codeBlockMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (codeBlockMatch) {
+        jsonText = codeBlockMatch[1];
+      }
+      
+      // Find the JSON object
+      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         return {
@@ -297,22 +307,27 @@ ${language !== 'English' ? `IMPORTANT: Respond entirely in ${language}.` : ''}`;
       }
       throw new Error('No JSON found in response');
     } catch (error) {
-      // Fallback for non-JSON responses
+      console.error('[AI Review] Failed to parse JSON response:', error.message);
+      console.log('[AI Review] Raw response (first 1000 chars):', responseText.substring(0, 1000));
+      
+      // Fallback for non-JSON responses - show the full response
       return {
         success: true,
         review: {
-          summary: responseText.substring(0, 500),
+          summary: responseText.length > 2000 
+            ? responseText.substring(0, 2000) + '... (truncated, click "View AI Response" to see full)'
+            : responseText,
           issues: [],
           security: [],
           suggestions: [],
           positives: [],
           metrics: {
-            overallScore: 75,
-            codeQuality: 75,
-            securityScore: 85,
-            maintainability: 75
+            overallScore: '-',
+            codeQuality: '-',
+            securityScore: '-',
+            maintainability: '-'
           },
-          note: 'Model did not return structured JSON'
+          note: 'AI responded in plain text instead of JSON format. The response is shown in the summary above.'
         },
         provider: this.constructor.id,
         model: this.config.model,

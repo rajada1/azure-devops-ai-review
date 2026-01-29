@@ -504,8 +504,21 @@ function renderReview(result) {
   // Action buttons
   html += `<div class="ai-review-actions">
     <button class="ai-review-btn btn-secondary" id="view-diff-btn">🔍 View Raw Diff</button>
+    ${result.rawResponse ? '<button class="ai-review-btn btn-secondary" id="view-raw-response-btn">📄 View AI Response</button>' : ''}
     <button class="ai-review-btn btn-secondary" id="clear-review-btn">🗑️ Clear Review</button>
   </div>`;
+
+  // If there's a note about non-JSON response, show it
+  if (review.note) {
+    html += `<div class="ai-review-note" style="margin-top: 12px; padding: 8px; background: #fff3cd; border-radius: 4px; font-size: 12px;">
+      ⚠️ ${escapeHtml(review.note)}
+    </div>`;
+  }
+
+  // Store raw response for viewing
+  if (result.rawResponse) {
+    window._aiReviewRawResponse = result.rawResponse;
+  }
 
   html += `</div>`;
   content.innerHTML = html;
@@ -525,6 +538,23 @@ function renderReview(result) {
 
   // Add event listener for view diff button
   document.getElementById('view-diff-btn')?.addEventListener('click', openDiffViewer);
+
+  // Add event listener for view raw response button
+  document.getElementById('view-raw-response-btn')?.addEventListener('click', () => {
+    if (window._aiReviewRawResponse) {
+      // Open in new window
+      const win = window.open('', '_blank', 'width=800,height=600');
+      win.document.write(`
+        <html>
+          <head><title>AI Raw Response</title>
+          <style>
+            body { font-family: monospace; padding: 20px; white-space: pre-wrap; word-wrap: break-word; }
+          </style></head>
+          <body>${escapeHtml(window._aiReviewRawResponse)}</body>
+        </html>
+      `);
+    }
+  });
 }
 
 function openDiffViewer() {
