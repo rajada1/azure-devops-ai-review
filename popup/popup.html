@@ -65,6 +65,19 @@
     <!-- Rules Tab -->
     <section id="tab-rules" class="tab-content">
       <div class="settings-group">
+        <h3>Review Scope</h3>
+        <p class="help-text">What should the AI analyze?</p>
+        <select id="rule-scope">
+          <option value="changes-only" selected>Only changed lines (recommended)</option>
+          <option value="changes-context">Changed lines + surrounding context</option>
+          <option value="full-file">Full file content (may cause inaccurate reviews)</option>
+        </select>
+        <p class="help-text" style="margin-top: 8px; color: #ff9800;">
+          ⚠️ "Full file" may report issues in code that wasn't modified in the PR.
+        </p>
+      </div>
+
+      <div class="settings-group">
         <h3>Review Focus</h3>
         <p class="help-text">Select what aspects the AI should prioritize:</p>
         <div class="checkbox-group">

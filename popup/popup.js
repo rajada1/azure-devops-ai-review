@@ -603,6 +603,11 @@ async function loadRules() {
     const result = await chrome.runtime.sendMessage({ type: 'GET_RULES' });
     const rules = result.rules || {};
 
+    // Scope
+    if (rules.scope) {
+      document.getElementById('rule-scope').value = rules.scope;
+    }
+
     // Focus checkboxes
     document.getElementById('rule-security').checked = rules.security !== false;
     document.getElementById('rule-performance').checked = rules.performance !== false;
@@ -632,6 +637,7 @@ async function loadRules() {
 
 async function saveRules() {
   const rules = {
+    scope: document.getElementById('rule-scope').value,
     security: document.getElementById('rule-security').checked,
     performance: document.getElementById('rule-performance').checked,
     cleanCode: document.getElementById('rule-clean-code').checked,

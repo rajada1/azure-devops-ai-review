@@ -85,7 +85,8 @@ async function handleMessage(message, sender) {
       return await fetchGitHubModels(message.token);
 
     case 'FETCH_PR_DIFF':
-      return await fetchPRDiff(message.prInfo, message.token);
+      const diffRules = await ConfigService.getRules();
+      return await fetchPRDiff(message.prInfo, message.token, diffRules);
 
     case 'POST_PR_COMMENT':
       return await postPRComment(message.prInfo, message.token, message.comment, message.filePath, message.line);
@@ -238,7 +239,7 @@ async function fetchGitHubModels(token) {
   }
 }
 
-async function fetchPRDiff(prInfo, token) {
+async function fetchPRDiff(prInfo, token, rules = {}) {
   try {
     // Determine base URL
     let baseUrl;
@@ -254,6 +255,9 @@ async function fetchPRDiff(prInfo, token) {
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     };
+
+    const scope = rules.scope || 'changes-only';
+    const contextLines = scope === 'changes-context' ? 5 : 0;
 
     // Get PR details
     const prResponse = await fetch(
@@ -498,34 +502,19 @@ async function fetchPRDiff(prInfo, token) {
                   const targetData = await targetResponse.json();
                   const targetContent = targetData.content || '';
                   
-                  // Simple diff
-                  const sourceLines = content.split('\n');
-                  const targetLines = targetContent.split('\n');
+                  // Generate unified diff with context based on scope setting
+                  const diffResult = generateUnifiedDiff(targetContent, content, path, scope, contextLines);
                   
-                  let diffLines = [];
-                  const maxLen = Math.max(sourceLines.length, targetLines.length);
-                  
-                  for (let i = 0; i < Math.min(maxLen, 150); i++) {
-                    const src = sourceLines[i];
-                    const tgt = targetLines[i];
-                    
-                    if (src !== tgt) {
-                      if (tgt !== undefined) diffLines.push(`- ${tgt}`);
-                      if (src !== undefined) diffLines.push(`+ ${src}`);
-                    }
-                  }
-
-                  if (diffLines.length > 0) {
-                    const diffText = diffLines.slice(0, 80).join('\n').substring(0, MAX_FILE_CHARS);
+                  if (diffResult.length > 0) {
+                    const diffText = diffResult.substring(0, MAX_FILE_CHARS);
                     fileSection += '```diff\n' + diffText;
-                    if (diffLines.length > 80) {
-                      fileSection += '\n... (more changes)';
+                    if (diffResult.length > MAX_FILE_CHARS) {
+                      fileSection += '\n... (diff truncated)';
                     }
                     fileSection += '\n```\n';
                   } else {
-                    // Files seem identical, show snippet of new content
-                    const preview = content.substring(0, 500);
-                    fileSection += '```\n' + preview + '\n... (preview)\n```\n';
+                    // No actual changes detected
+                    fileSection += '(No text changes detected)\n';
                   }
                 } else {
                   // Can't get target, just show new content
@@ -654,6 +643,150 @@ function getChangeTypeName(changeType) {
     16: 'SourceRename'
   };
   return types[changeType] || changeType || 'Change';
+}
+
+/**
+ * Generate a unified diff between two file contents
+ * Shows only the changed lines with context
+ * 
+ * @param {string} oldContent - Original file content (target branch)
+ * @param {string} newContent - New file content (source branch)  
+ * @param {string} filePath - File path for display
+ * @param {string} scope - 'changes-only', 'changes-context', or 'full-file'
+ * @param {number} contextLines - Number of context lines (default 3)
+ * @returns {string} - Formatted diff
+ */
+function generateUnifiedDiff(oldContent, newContent, filePath, scope = 'changes-only', contextLines = 3) {
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+  
+  // For full-file scope, show the entire new file
+  if (scope === 'full-file') {
+    return newLines.slice(0, 200).map((line, i) => `${String(i + 1).padStart(4)} | ${line}`).join('\n');
+  }
+  
+  // Find which lines changed
+  const changedRanges = [];
+  let inChange = false;
+  let changeStart = -1;
+  
+  // Use simple line-by-line comparison with offset tolerance
+  const maxLen = Math.max(oldLines.length, newLines.length);
+  const changes = new Map(); // line number -> { type: 'add'|'remove'|'modify', oldLine?, newLine? }
+  
+  // Find matching and differing sections
+  let oldIdx = 0;
+  let newIdx = 0;
+  
+  while (oldIdx < oldLines.length || newIdx < newLines.length) {
+    const oldLine = oldLines[oldIdx];
+    const newLine = newLines[newIdx];
+    
+    if (oldLine === newLine) {
+      // Lines match, move both forward
+      oldIdx++;
+      newIdx++;
+    } else if (oldLine === undefined) {
+      // Added line at end
+      changes.set(newIdx, { type: 'add', newLine, newIdx });
+      newIdx++;
+    } else if (newLine === undefined) {
+      // Removed line at end
+      changes.set(oldIdx + 10000, { type: 'remove', oldLine, oldIdx }); // offset to avoid collision
+      oldIdx++;
+    } else {
+      // Lines differ - check if it's a modification or insert/delete
+      // Look ahead to find if old line exists later in new content
+      const oldInNew = newLines.indexOf(oldLine, newIdx);
+      const newInOld = oldLines.indexOf(newLine, oldIdx);
+      
+      if (oldInNew !== -1 && (newInOld === -1 || oldInNew - newIdx < newInOld - oldIdx)) {
+        // Old line found later in new - lines were added
+        while (newIdx < oldInNew) {
+          changes.set(newIdx, { type: 'add', newLine: newLines[newIdx], newIdx });
+          newIdx++;
+        }
+      } else if (newInOld !== -1) {
+        // New line found later in old - lines were removed
+        while (oldIdx < newInOld) {
+          changes.set(oldIdx + 10000, { type: 'remove', oldLine: oldLines[oldIdx], oldIdx });
+          oldIdx++;
+        }
+      } else {
+        // Line was modified
+        changes.set(oldIdx + 10000, { type: 'remove', oldLine, oldIdx });
+        changes.set(newIdx, { type: 'add', newLine, newIdx });
+        oldIdx++;
+        newIdx++;
+      }
+    }
+  }
+  
+  if (changes.size === 0) {
+    return '';
+  }
+  
+  // Build output with context
+  const result = [];
+  const changedNewLines = new Set();
+  const changedOldLines = new Set();
+  
+  changes.forEach((change, key) => {
+    if (change.type === 'add') {
+      changedNewLines.add(change.newIdx);
+    } else {
+      changedOldLines.add(change.oldIdx);
+    }
+  });
+  
+  // Generate output showing changes with context
+  let lastOutputLine = -10;
+  
+  for (let i = 0; i < newLines.length; i++) {
+    const isChanged = changedNewLines.has(i);
+    const needsContext = scope === 'changes-context';
+    
+    // Check if within context range of a change
+    let inContextRange = false;
+    if (needsContext) {
+      for (let j = Math.max(0, i - contextLines); j <= Math.min(newLines.length - 1, i + contextLines); j++) {
+        if (changedNewLines.has(j)) {
+          inContextRange = true;
+          break;
+        }
+      }
+    }
+    
+    if (isChanged) {
+      // Show removed lines first (from old content around this position)
+      changedOldLines.forEach(oldIdx => {
+        if (Math.abs(oldIdx - i) <= 2) {
+          result.push(`- ${oldLines[oldIdx]}`);
+          changedOldLines.delete(oldIdx);
+        }
+      });
+      
+      result.push(`+ ${newLines[i]}`);
+      lastOutputLine = i;
+    } else if (inContextRange) {
+      // Add separator if there's a gap
+      if (i > lastOutputLine + 1 && result.length > 0) {
+        result.push('  ...');
+      }
+      result.push(`  ${newLines[i]}`);
+      lastOutputLine = i;
+    } else if (scope === 'changes-only' && isChanged) {
+      result.push(`+ ${newLines[i]}`);
+      lastOutputLine = i;
+    }
+  }
+  
+  // Add any remaining removed lines
+  changedOldLines.forEach(oldIdx => {
+    result.push(`- ${oldLines[oldIdx]}`);
+  });
+  
+  return result.slice(0, 150).join('\n'); // Limit output
 }
 
 // Log extension startup

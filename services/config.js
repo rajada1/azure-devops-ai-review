@@ -20,6 +20,7 @@ const DEFAULT_SETTINGS = {
 };
 
 const DEFAULT_RULES = {
+  scope: 'changes-only',
   security: true,
   performance: true,
   cleanCode: true,

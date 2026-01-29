@@ -161,7 +161,18 @@ export class BaseProvider {
       ? `\n\nAdditional project-specific guidelines:\n${rules.customInstructions}`
       : '';
 
-    return `You are an expert code reviewer. Analyze the provided git patch and provide a comprehensive code review in ${language}.${focusSection}${severityNote}${customInstructions}
+    // Scope instruction
+    const scopeInstruction = `
+
+CRITICAL INSTRUCTION - REVIEW SCOPE:
+- Only review code that is ACTUALLY CHANGED in this pull request (lines marked with + or -)
+- Do NOT report issues in unchanged code that may appear as context
+- If a file shows partial content, assume the rest of the file (including dispose methods, constructors, etc.) exists and is correct
+- Lines starting with "+" are additions (new code) - focus on these
+- Lines starting with "-" are deletions (removed code)
+- Lines starting with " " (space) are context only - do NOT report issues in these`;
+
+    return `You are an expert code reviewer. Analyze the provided git diff/patch and provide a comprehensive code review in ${language}.${scopeInstruction}${focusSection}${severityNote}${customInstructions}
 
 Please analyze the git diff/patch and provide your review in this EXACT JSON format:
 
