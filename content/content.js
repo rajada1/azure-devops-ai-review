@@ -385,6 +385,26 @@ function renderReview(result) {
     return `<span class="file-link" data-file="${escapeHtml(file)}" data-line="${line || ''}" title="Click to go to file">📄 ${escapeHtml(file)}${lineStr}</span>`;
   };
 
+  // Helper for code snippets
+  const renderCodeSnippet = (codeSnippet, suggestedCode) => {
+    if (!codeSnippet && !suggestedCode) return '';
+    
+    let html = '';
+    if (codeSnippet) {
+      html += `<div class="code-snippet-container">
+        <div class="code-snippet-label">Current code:</div>
+        <pre class="code-snippet code-current">${escapeHtml(codeSnippet)}</pre>
+      </div>`;
+    }
+    if (suggestedCode) {
+      html += `<div class="code-snippet-container">
+        <div class="code-snippet-label">Suggested fix:</div>
+        <pre class="code-snippet code-suggested">${escapeHtml(suggestedCode)}</pre>
+      </div>`;
+    }
+    return html;
+  };
+
   // Issues
   if (review.issues?.length > 0) {
     html += `<div class="ai-review-section">
@@ -397,6 +417,8 @@ function renderReview(result) {
               <span class="issue-text">${escapeHtml(issue.description || '')}</span>
             </div>
             ${createFileLink(issue.file, issue.line)}
+            ${renderCodeSnippet(issue.codeSnippet, issue.suggestedCode)}
+            ${issue.suggestion ? `<div class="recommendation">💡 ${escapeHtml(issue.suggestion)}</div>` : ''}
             <button class="ai-review-btn-small add-comment-btn" 
                     data-type="issue" 
                     data-file="${escapeHtml(issue.file || '')}" 
@@ -421,8 +443,9 @@ function renderReview(result) {
               <span class="badge ${sec.severity || 'medium'}">${sec.severity || 'warning'}</span>
               <span class="issue-text">${escapeHtml(sec.description || '')}</span>
             </div>
-            ${sec.recommendation ? `<div class="recommendation">💡 ${escapeHtml(sec.recommendation)}</div>` : ''}
             ${createFileLink(sec.file, sec.line)}
+            ${renderCodeSnippet(sec.codeSnippet, sec.suggestedCode)}
+            ${sec.recommendation ? `<div class="recommendation">💡 ${escapeHtml(sec.recommendation)}</div>` : ''}
             <button class="ai-review-btn-small add-comment-btn" 
                     data-type="security" 
                     data-file="${escapeHtml(sec.file || '')}" 
@@ -448,6 +471,7 @@ function renderReview(result) {
               <span class="issue-text">${escapeHtml(sug.description || '')}</span>
             </div>
             ${createFileLink(sug.file, sug.line)}
+            ${renderCodeSnippet(sug.codeSnippet, sug.suggestedCode)}
             <button class="ai-review-btn-small add-comment-btn" 
                     data-type="suggestion" 
                     data-file="${escapeHtml(sug.file || '')}" 

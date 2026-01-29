@@ -174,14 +174,20 @@ Please analyze the git diff/patch and provide your review in this EXACT JSON for
       "description": "Description of the issue",
       "file": "filename",
       "line": "line number or range",
-      "suggestion": "How to fix it"
+      "codeSnippet": "The exact code snippet from the diff that has the issue (copy the relevant lines)",
+      "suggestion": "How to fix it",
+      "suggestedCode": "The corrected code snippet (optional, include when applicable)"
     }
   ],
   "security": [
     {
       "severity": "high|medium|low",
       "description": "Security concern description",
-      "recommendation": "How to fix it"
+      "file": "filename",
+      "line": "line number or range",
+      "codeSnippet": "The exact code snippet with the security issue",
+      "recommendation": "How to fix it",
+      "suggestedCode": "The corrected code (optional)"
     }
   ],
   "suggestions": [
@@ -189,7 +195,9 @@ Please analyze the git diff/patch and provide your review in this EXACT JSON for
       "type": "performance|style|best-practice|maintainability|readability",
       "description": "Suggestion description",
       "file": "filename",
-      "line": "line number or range"
+      "line": "line number or range",
+      "codeSnippet": "The current code that could be improved",
+      "suggestedCode": "The improved code (optional)"
     }
   ],
   "positives": [
@@ -202,6 +210,11 @@ Please analyze the git diff/patch and provide your review in this EXACT JSON for
     "maintainability": 85
   }
 }
+
+IMPORTANT:
+- For each issue/suggestion, ALWAYS include the "codeSnippet" field with the exact code from the diff
+- Include "suggestedCode" when you can provide a concrete fix
+- Copy the code exactly as it appears in the diff
 
 Scoring Guidelines:
 - All metric scores should be 0-100
