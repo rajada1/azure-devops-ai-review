@@ -19,8 +19,8 @@
 }
 
 .ai-review-panel.minimized {
-  width: 180px;
-  max-height: 44px;
+  width: 220px;
+  max-height: 48px;
   cursor: pointer;
 }
 

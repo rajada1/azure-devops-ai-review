@@ -9,6 +9,48 @@ let conversationHistory = [];
 let currentPrInfo = null;
 let lastReviewResult = null; // Keep review state
 
+// Storage key for persistence
+const STORAGE_KEY = 'ai-review-state';
+
+// Save state to sessionStorage
+function saveState() {
+  if (!currentPrInfo) return;
+  const key = `${STORAGE_KEY}-${currentPrInfo.pullRequestId}`;
+  const state = {
+    lastReviewResult,
+    conversationHistory,
+    patchContent,
+    timestamp: Date.now()
+  };
+  try {
+    sessionStorage.setItem(key, JSON.stringify(state));
+  } catch (e) {
+    console.warn('[AI Review] Failed to save state:', e);
+  }
+}
+
+// Load state from sessionStorage
+function loadState() {
+  if (!currentPrInfo) return false;
+  const key = `${STORAGE_KEY}-${currentPrInfo.pullRequestId}`;
+  try {
+    const saved = sessionStorage.getItem(key);
+    if (saved) {
+      const state = JSON.parse(saved);
+      // Only use if less than 1 hour old
+      if (Date.now() - state.timestamp < 3600000) {
+        lastReviewResult = state.lastReviewResult;
+        conversationHistory = state.conversationHistory || [];
+        patchContent = state.patchContent;
+        return true;
+      }
+    }
+  } catch (e) {
+    console.warn('[AI Review] Failed to load state:', e);
+  }
+  return false;
+}
+
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
@@ -25,7 +67,14 @@ async function init() {
   const prInfo = extractPRInfoFromUrl();
   if (prInfo) {
     console.log('[AI Review] PR detected:', prInfo);
+    currentPrInfo = prInfo; // Set early for state loading
     createReviewPanel();
+    
+    // Try to restore previous review state
+    if (loadState() && lastReviewResult) {
+      console.log('[AI Review] Restored previous review state');
+      updatePanelContent('review', lastReviewResult);
+    }
   } else {
     console.log('[AI Review] Not on a PR page, waiting for navigation...');
   }
@@ -437,12 +486,11 @@ function handleFileClick(event) {
     baseUrl = `https://dev.azure.com/${currentPrInfo.organization}`;
   }
 
-  // Azure DevOps PR file URL format
-  let fileUrl = `${baseUrl}/${currentPrInfo.project}/_git/${currentPrInfo.repository}/pullrequest/${currentPrInfo.pullRequestId}?path=${encodeURIComponent(file)}`;
+  // Azure DevOps PR file URL format - navigate to Files tab with path
+  // Format: /project/_git/repo/pullrequest/id?_a=files&path=/path/to/file
+  let fileUrl = `${baseUrl}/${currentPrInfo.project}/_git/${currentPrInfo.repository}/pullrequest/${currentPrInfo.pullRequestId}?_a=files&path=${encodeURIComponent(file)}`;
   
-  if (line) {
-    fileUrl += `&line=${line}&lineEnd=${line}&lineStartColumn=1&lineEndColumn=1000&lineStyle=plain`;
-  }
+  // Note: Azure DevOps doesn't support line anchors in PR file view, but this will at least navigate to the file
 
   // Open in new tab to preserve review state
   window.open(fileUrl, '_blank');
@@ -451,7 +499,17 @@ function handleFileClick(event) {
 function clearReview() {
   lastReviewResult = null;
   conversationHistory = [];
-  updatePanelContent('idle');
+  patchContent = null;
+  
+  // Clear from sessionStorage
+  if (currentPrInfo) {
+    const key = `${STORAGE_KEY}-${currentPrInfo.pullRequestId}`;
+    try {
+      sessionStorage.removeItem(key);
+    } catch (e) {}
+  }
+  
+  updatePanelContent('ready');
 }
 
 async function startReview() {
@@ -522,6 +580,7 @@ async function startReview() {
       lastReviewResult = result; // Save for state persistence
       updatePanelContent('review', result);
       conversationHistory = [];
+      saveState(); // Persist to sessionStorage
     }
   } catch (error) {
     console.error('[AI Review] Error:', error);
