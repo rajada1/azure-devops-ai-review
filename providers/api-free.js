@@ -43,18 +43,32 @@ export class ApiFreeProvider extends BaseProvider {
       required: true,
       default: 'anthropic/claude-sonnet-4.5',
       options: [
-        { value: 'anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
-        { value: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4' },
-        { value: 'anthropic/claude-haiku-3.5', label: 'Claude Haiku 3.5' },
-        { value: 'openai/gpt-4o', label: 'GPT-4o' },
-        { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-        { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-        { value: 'meta/llama-3.3-70b', label: 'Llama 3.3 70B' }
+        { value: 'anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5 (200K context)' },
+        { value: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4 (200K context)' },
+        { value: 'anthropic/claude-haiku-3.5', label: 'Claude Haiku 3.5 (200K context)' },
+        { value: 'openai/gpt-4o', label: 'GPT-4o (128K context)' },
+        { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (128K context)' },
+        { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash (1M context)' },
+        { value: 'meta/llama-3.3-70b', label: 'Llama 3.3 70B (128K context)' }
       ]
     },
     {
+      name: 'contextSize',
+      label: 'Model Context Size',
+      type: 'select',
+      required: false,
+      default: '200000',
+      options: [
+        { value: '32000', label: '32K' },
+        { value: '128000', label: '128K (GPT-4o, Llama)' },
+        { value: '200000', label: '200K (Claude models)' },
+        { value: '1000000', label: '1M (Gemini)' }
+      ],
+      description: 'Larger context = can analyze bigger PRs without truncation'
+    },
+    {
       name: 'maxTokens',
-      label: 'Max Tokens',
+      label: 'Max Response Tokens',
       type: 'number',
       required: false,
       default: 8192,
@@ -67,6 +81,8 @@ export class ApiFreeProvider extends BaseProvider {
     this.id = 'api-free';
     this.name = 'API Free';
     this.baseUrl = config.baseUrl || 'https://api.apifree.ai/v1';
+    // Default to 200K for Claude models
+    this.contextSize = parseInt(config.contextSize) || 200000;
   }
 
   /**
@@ -155,15 +171,22 @@ export class ApiFreeProvider extends BaseProvider {
   async reviewCode(patchContent, options = {}) {
     const baseUrl = this.getBaseUrl();
     const model = this.config.model || 'anthropic/claude-sonnet-4.5';
-    const maxTokens = this.config.maxTokens || 8192;
+    const maxTokens = parseInt(this.config.maxTokens) || 8192;
 
-    // Truncate diff if too large
-    const MAX_DIFF_CHARS = 60000;
+    // Calculate max diff size based on context size
+    // Reserve ~20% for system prompt + response
+    const contextTokens = this.contextSize;
+    const reservedTokens = Math.max(8000, Math.floor(contextTokens * 0.2));
+    const availableTokens = contextTokens - reservedTokens;
+    const maxDiffChars = availableTokens * 4; // ~4 chars per token
+    
     let truncatedPatch = patchContent;
     
-    if (patchContent.length > MAX_DIFF_CHARS) {
-      truncatedPatch = patchContent.substring(0, MAX_DIFF_CHARS) + '\n\n... (diff truncated - ' + (patchContent.length - MAX_DIFF_CHARS) + ' chars omitted)';
-      console.log('[API Free] Diff truncated from', patchContent.length, 'to', MAX_DIFF_CHARS, 'chars');
+    if (patchContent.length > maxDiffChars) {
+      truncatedPatch = patchContent.substring(0, maxDiffChars) + '\n\n... (diff truncated - ' + (patchContent.length - maxDiffChars) + ' chars omitted)';
+      console.log('[API Free] Diff truncated from', patchContent.length, 'to', maxDiffChars, 'chars (context:', contextTokens, 'tokens)');
+    } else {
+      console.log('[API Free] Diff fits in context, no truncation needed (', patchContent.length, 'chars, max:', maxDiffChars, ')');
     }
 
     const systemPrompt = this.buildReviewPrompt(options.language, options.rules);

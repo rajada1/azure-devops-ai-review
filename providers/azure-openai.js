@@ -58,6 +58,20 @@ export class AzureOpenAIProvider extends BaseProvider {
         type: 'text',
         required: true,
         placeholder: 'model-router or your deployment name'
+      },
+      {
+        name: 'contextSize',
+        label: 'Model Context Size',
+        type: 'select',
+        required: false,
+        default: '128000',
+        options: [
+          { value: '8000', label: '8K (GPT-3.5)' },
+          { value: '16000', label: '16K' },
+          { value: '32000', label: '32K' },
+          { value: '128000', label: '128K (GPT-4o, GPT-4 Turbo)' }
+        ],
+        description: 'Larger context = can analyze bigger PRs without truncation'
       }
     ];
   }
@@ -69,6 +83,9 @@ export class AzureOpenAIProvider extends BaseProvider {
     if (this.config.baseUrl && !this.config.baseUrl.endsWith('/')) {
       this.config.baseUrl += '/';
     }
+    
+    // Default context size to 128K for modern models
+    this.contextSize = parseInt(this.config.contextSize) || 128000;
   }
 
   validate() {
@@ -154,21 +171,28 @@ export class AzureOpenAIProvider extends BaseProvider {
 
     const systemPrompt = this.buildReviewPrompt(language, rules);
     
-    // Truncate diff if too large to leave room for response
-    // GPT-4 has ~128K context, but we want to leave room for system prompt + response
-    const MAX_DIFF_CHARS = 60000; // ~15K tokens for diff, leaving room for response
+    // Calculate max diff size based on context size
+    // Reserve ~20% for system prompt + response (8K-25K tokens depending on model)
+    // 1 token ≈ 4 chars
+    const contextTokens = this.contextSize;
+    const reservedTokens = Math.max(8000, Math.floor(contextTokens * 0.2)); // At least 8K for response
+    const availableTokens = contextTokens - reservedTokens;
+    const maxDiffChars = availableTokens * 4; // ~4 chars per token
+    
     let truncatedPatch = patchContent;
     let wasTruncated = false;
     
-    if (patchContent.length > MAX_DIFF_CHARS) {
-      truncatedPatch = patchContent.substring(0, MAX_DIFF_CHARS) + '\n\n... (diff truncated for AI analysis - ' + (patchContent.length - MAX_DIFF_CHARS) + ' chars omitted)';
+    if (patchContent.length > maxDiffChars) {
+      truncatedPatch = patchContent.substring(0, maxDiffChars) + '\n\n... (diff truncated for AI analysis - ' + (patchContent.length - maxDiffChars) + ' chars omitted)';
       wasTruncated = true;
-      console.log('[AI Review] Diff truncated from', patchContent.length, 'to', MAX_DIFF_CHARS, 'chars for AI analysis');
+      console.log('[AI Review] Diff truncated from', patchContent.length, 'to', maxDiffChars, 'chars (context:', contextTokens, 'tokens)');
+    } else {
+      console.log('[AI Review] Diff fits in context, no truncation needed (', patchContent.length, 'chars, max:', maxDiffChars, ')');
     }
     
     const userMessage = this._buildUserMessage(truncatedPatch, prTitle, prDescription);
 
-    console.log('[AI Review] Sending request to Azure OpenAI, diff size:', truncatedPatch.length, 'chars (original:', patchContent.length, ')');
+    console.log('[AI Review] Sending request to Azure OpenAI, diff size:', truncatedPatch.length, 'chars');
 
     try {
       const response = await fetch(this._getEndpoint(), {
@@ -181,7 +205,7 @@ export class AzureOpenAIProvider extends BaseProvider {
             { role: 'user', content: userMessage }
           ],
           temperature: 0.3,
-          max_tokens: 8000
+          max_tokens: Math.min(16000, reservedTokens) // Use reserved tokens for response, max 16K
         })
       });
 

@@ -226,15 +226,29 @@ function onProviderSelect(e) {
   if (provider.configFields && provider.configFields.length > 0) {
     // Use custom fields from provider
     provider.configFields.forEach(field => {
-      const inputType = field.type === 'password' ? 'password' : 'text';
-      const required = field.required ? 'required' : '';
+      html += `<div class="form-field">`;
+      html += `<label for="provider-${field.name}">${field.label}</label>`;
       
-      html += `
-        <div class="form-field">
-          <label for="provider-${field.name}">${field.label}</label>
-          <input type="${inputType}" id="provider-${field.name}" placeholder="${field.placeholder || ''}" ${required}>
-        </div>
-      `;
+      if (field.type === 'select' && field.options) {
+        // Render select dropdown
+        html += `<select id="provider-${field.name}">`;
+        field.options.forEach(opt => {
+          const selected = opt.value === field.default ? 'selected' : '';
+          html += `<option value="${opt.value}" ${selected}>${opt.label}</option>`;
+        });
+        html += `</select>`;
+      } else {
+        // Render text/password input
+        const inputType = field.type === 'password' ? 'password' : 'text';
+        const required = field.required ? 'required' : '';
+        html += `<input type="${inputType}" id="provider-${field.name}" placeholder="${field.placeholder || ''}" ${required}>`;
+      }
+      
+      if (field.description) {
+        html += `<p class="help-text">${field.description}</p>`;
+      }
+      
+      html += `</div>`;
     });
   } else {
     // Default form fields
