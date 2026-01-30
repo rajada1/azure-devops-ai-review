@@ -153,9 +153,22 @@ export class AzureOpenAIProvider extends BaseProvider {
     const { language = 'English', prTitle = '', prDescription = '', rules = {} } = options;
 
     const systemPrompt = this.buildReviewPrompt(language, rules);
-    const userMessage = this._buildUserMessage(patchContent, prTitle, prDescription);
+    
+    // Truncate diff if too large to leave room for response
+    // GPT-4 has ~128K context, but we want to leave room for system prompt + response
+    const MAX_DIFF_CHARS = 60000; // ~15K tokens for diff, leaving room for response
+    let truncatedPatch = patchContent;
+    let wasTruncated = false;
+    
+    if (patchContent.length > MAX_DIFF_CHARS) {
+      truncatedPatch = patchContent.substring(0, MAX_DIFF_CHARS) + '\n\n... (diff truncated for AI analysis - ' + (patchContent.length - MAX_DIFF_CHARS) + ' chars omitted)';
+      wasTruncated = true;
+      console.log('[AI Review] Diff truncated from', patchContent.length, 'to', MAX_DIFF_CHARS, 'chars for AI analysis');
+    }
+    
+    const userMessage = this._buildUserMessage(truncatedPatch, prTitle, prDescription);
 
-    console.log('[AI Review] Sending request to Azure OpenAI, diff size:', patchContent.length, 'chars');
+    console.log('[AI Review] Sending request to Azure OpenAI, diff size:', truncatedPatch.length, 'chars (original:', patchContent.length, ')');
 
     try {
       const response = await fetch(this._getEndpoint(), {
@@ -168,7 +181,7 @@ export class AzureOpenAIProvider extends BaseProvider {
             { role: 'user', content: userMessage }
           ],
           temperature: 0.3,
-          max_tokens: 4000
+          max_tokens: 8000
         })
       });
 

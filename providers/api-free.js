@@ -157,11 +157,22 @@ export class ApiFreeProvider extends BaseProvider {
     const model = this.config.model || 'anthropic/claude-sonnet-4.5';
     const maxTokens = this.config.maxTokens || 8192;
 
+    // Truncate diff if too large
+    const MAX_DIFF_CHARS = 60000;
+    let truncatedPatch = patchContent;
+    
+    if (patchContent.length > MAX_DIFF_CHARS) {
+      truncatedPatch = patchContent.substring(0, MAX_DIFF_CHARS) + '\n\n... (diff truncated - ' + (patchContent.length - MAX_DIFF_CHARS) + ' chars omitted)';
+      console.log('[API Free] Diff truncated from', patchContent.length, 'to', MAX_DIFF_CHARS, 'chars');
+    }
+
     const systemPrompt = this.buildReviewPrompt(options.language, options.rules);
 
     const messages = [
-      { role: 'user', content: `${systemPrompt}\n\nPlease review the following code changes:\n\n${patchContent}` }
+      { role: 'user', content: `${systemPrompt}\n\nPlease review the following code changes:\n\n${truncatedPatch}` }
     ];
+
+    console.log('[API Free] Sending request, diff size:', truncatedPatch.length, 'chars');
 
     try {
       const response = await fetch(`${baseUrl}/chat/completions`, {
