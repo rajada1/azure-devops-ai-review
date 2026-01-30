@@ -212,25 +212,38 @@ export class ApiFreeProvider extends BaseProvider {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error('[API Free] API error response:', errorData);
         throw new Error(errorData.error?.message || `API error: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('[API Free] Response received:', {
+        hasChoices: !!data.choices,
+        choicesLength: data.choices?.length,
+        finishReason: data.choices?.[0]?.finish_reason,
+        contentLength: data.choices?.[0]?.message?.content?.length,
+        usage: data.usage
+      });
+      
       const content = data.choices?.[0]?.message?.content;
 
       if (!content) {
+        console.error('[API Free] Empty content. Full response:', JSON.stringify(data).substring(0, 1000));
         throw new Error('No response content from API Free');
       }
+
+      console.log('[API Free] Content preview (first 500 chars):', content.substring(0, 500));
 
       // Parse the JSON response
       const review = this.parseReviewResponse(content);
 
       return {
         success: true,
-        review: review,
+        review: review.review || review,
         usage: data.usage,
         model: model,
-        provider: 'API Free'
+        provider: 'API Free',
+        rawResponse: content
       };
     } catch (error) {
       console.error('[API Free] Review error:', error);
