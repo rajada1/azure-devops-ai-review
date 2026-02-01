@@ -577,14 +577,148 @@ function handleFileClick(event) {
     baseUrl = `https://dev.azure.com/${currentPrInfo.organization}`;
   }
 
-  // Azure DevOps PR file URL format - navigate to Files tab with path
-  // Format: /project/_git/repo/pullrequest/id?_a=files&path=/path/to/file
-  let fileUrl = `${baseUrl}/${currentPrInfo.project}/_git/${currentPrInfo.repository}/pullrequest/${currentPrInfo.pullRequestId}?_a=files&path=${encodeURIComponent(file)}`;
-  
-  // Note: Azure DevOps doesn't support line anchors in PR file view, but this will at least navigate to the file
+  // Try to navigate within the current page first
+  // Azure DevOps uses ?_a=files&path=/path to show files tab
+  const filesTabUrl = `${baseUrl}/${currentPrInfo.project}/_git/${currentPrInfo.repository}/pullrequest/${currentPrInfo.pullRequestId}?_a=files&path=${encodeURIComponent(file)}`;
 
-  // Open in new tab to preserve review state
-  window.open(fileUrl, '_blank');
+  // Check if we're already on the Files tab
+  const currentUrl = window.location.href;
+  const isOnFilesTab = currentUrl.includes('_a=files');
+
+  if (isOnFilesTab) {
+    // Try to find and scroll to the file in the current view
+    const scrolledToFile = scrollToFileInPage(file, line);
+    if (scrolledToFile) {
+      return; // Successfully scrolled to file
+    }
+  }
+
+  // If not on files tab or file not visible, navigate to files tab with path
+  // Use history.pushState to avoid full page reload where possible
+  if (window.history && currentUrl.includes('pullrequest/')) {
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.set('_a', 'files');
+    newUrl.searchParams.set('path', file);
+    
+    // Navigate using Azure DevOps internal navigation if available
+    if (window.TFS && window.TFS.Host && window.TFS.Host.navigate) {
+      window.TFS.Host.navigate(newUrl.toString());
+    } else {
+      // Fallback: update URL and trigger navigation
+      window.location.href = newUrl.toString();
+    }
+    
+    // After navigation, try to scroll to line after a delay
+    if (line) {
+      setTimeout(() => scrollToLineInFile(file, line), 1500);
+    }
+  } else {
+    // Fallback: open in same tab
+    window.location.href = filesTabUrl;
+  }
+}
+
+/**
+ * Try to scroll to a specific file in the current PR files view
+ */
+function scrollToFileInPage(filePath, line) {
+  // Azure DevOps file items have various selectors depending on the view
+  // Try multiple approaches
+  
+  // Get filename from path
+  const fileName = filePath.split('/').pop();
+  
+  // Try to find file by path attribute or title
+  const fileElements = document.querySelectorAll(
+    `[data-path="${filePath}"], ` +
+    `[title="${filePath}"], ` +
+    `[aria-label*="${fileName}"], ` +
+    `.file-path[title*="${fileName}"], ` +
+    `.repos-summary-header:has([title*="${fileName}"])`
+  );
+  
+  for (const el of fileElements) {
+    // Found the file, scroll to it
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    
+    // Highlight briefly
+    el.style.transition = 'background-color 0.3s';
+    el.style.backgroundColor = 'rgba(0, 120, 212, 0.2)';
+    setTimeout(() => {
+      el.style.backgroundColor = '';
+    }, 2000);
+    
+    // If we have a line number, try to scroll to it after file is visible
+    if (line) {
+      setTimeout(() => scrollToLineInFile(filePath, line), 500);
+    }
+    
+    return true;
+  }
+  
+  // Try clicking on the file in the tree view to expand it
+  const treeItems = document.querySelectorAll('.vc-sparse-files-tree .tree-row, .repos-changes-explorer .tree-row');
+  for (const item of treeItems) {
+    if (item.textContent.includes(fileName)) {
+      item.click();
+      
+      if (line) {
+        setTimeout(() => scrollToLineInFile(filePath, line), 800);
+      }
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Try to scroll to a specific line within a file diff
+ */
+function scrollToLineInFile(filePath, line) {
+  const fileName = filePath.split('/').pop();
+  
+  // Find line number elements in the diff view
+  // Azure DevOps uses different structures for line numbers
+  const lineSelectors = [
+    `.line-number[data-line="${line}"]`,
+    `.repos-line-number:contains("${line}")`,
+    `[data-line-number="${line}"]`,
+    `.diff-line-number:contains("${line}")`
+  ];
+  
+  // First, find the file container
+  const fileContainers = document.querySelectorAll('.repos-summary-item, .file-container, .diff-file-container');
+  
+  for (const container of fileContainers) {
+    // Check if this is our file
+    const header = container.querySelector('.file-path, .repos-summary-header, [title]');
+    if (!header || !header.textContent.includes(fileName)) continue;
+    
+    // Look for the line in this container
+    const lineElements = container.querySelectorAll('.line-number, .repos-line-number, [data-line-number]');
+    for (const lineEl of lineElements) {
+      const lineText = lineEl.textContent.trim();
+      if (lineText === String(line) || lineEl.dataset.line === String(line) || lineEl.dataset.lineNumber === String(line)) {
+        // Found the line!
+        const row = lineEl.closest('tr, .diff-row, .repos-line');
+        if (row) {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          
+          // Highlight the line
+          row.style.transition = 'background-color 0.3s';
+          row.style.backgroundColor = 'rgba(255, 200, 0, 0.3)';
+          setTimeout(() => {
+            row.style.backgroundColor = '';
+          }, 3000);
+          
+          return true;
+        }
+      }
+    }
+  }
+  
+  return false;
 }
 
 function clearReview() {
