@@ -3,6 +3,7 @@
 
 import { ProviderFactory, GitHubCopilotProvider } from './providers/provider-factory.js';
 import { ConfigService } from './services/config.js';
+import { CopilotAuthService } from './services/copilot-auth.js';
 
 // Handle extension icon click
 chrome.action.onClicked.addListener((tab) => {
@@ -67,6 +68,23 @@ async function handleMessage(message, sender) {
     case 'SAVE_GITHUB_TOKEN':
       await ConfigService.saveGitHubToken(message.token);
       return { success: true };
+
+    // Copilot OAuth Authentication
+    case 'COPILOT_START_AUTH':
+      return await startCopilotAuth();
+
+    case 'COPILOT_POLL_AUTH':
+      return await pollCopilotAuth(message.deviceCode, message.interval);
+
+    case 'COPILOT_GET_STATUS':
+      return await getCopilotAuthStatus();
+
+    case 'COPILOT_SIGN_OUT':
+      await CopilotAuthService.signOut();
+      return { success: true };
+
+    case 'COPILOT_FETCH_MODELS':
+      return await fetchCopilotModels();
 
     case 'UPDATE_SETTINGS':
       await ConfigService.updateSettings(message.settings);
@@ -233,6 +251,80 @@ async function handleChat(patchContent, conversationHistory, options = {}) {
 async function fetchGitHubModels(token) {
   try {
     const models = await GitHubCopilotProvider.fetchAvailableModels(token);
+    return {
+      success: true,
+      models
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      models: []
+    };
+  }
+}
+
+// ========== COPILOT OAUTH AUTHENTICATION ==========
+
+async function startCopilotAuth() {
+  try {
+    const result = await CopilotAuthService.startDeviceFlow();
+    return {
+      success: true,
+      userCode: result.userCode,
+      verificationUri: result.verificationUri,
+      deviceCode: result.deviceCode,
+      expiresIn: result.expiresIn,
+      interval: result.interval
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+async function pollCopilotAuth(deviceCode, interval) {
+  try {
+    const token = await CopilotAuthService.pollForOAuthToken(deviceCode, interval);
+    
+    // Verify we can get an API token (validates Copilot subscription)
+    const apiToken = await CopilotAuthService.getApiToken(token);
+    
+    return {
+      success: true,
+      authenticated: true,
+      hasSubscription: !!apiToken
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+async function getCopilotAuthStatus() {
+  try {
+    const status = await CopilotAuthService.getAuthStatus();
+    return {
+      success: true,
+      ...status
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      authenticated: false,
+      hasSubscription: false
+    };
+  }
+}
+
+async function fetchCopilotModels() {
+  try {
+    const models = await CopilotAuthService.fetchModels();
     return {
       success: true,
       models

@@ -536,3 +536,104 @@ select {
   from { opacity: 0; transform: translate(-50%, 10px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
+
+/* Copilot Auth Section */
+.copilot-auth-section {
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.copilot-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.copilot-status .status-icon {
+  font-size: 18px;
+}
+
+.copilot-status .status-text {
+  font-weight: 500;
+}
+
+.copilot-status.authenticated .status-text {
+  color: #4caf50;
+}
+
+.copilot-status.warning .status-text {
+  color: #ff9800;
+}
+
+.copilot-status.error .status-text {
+  color: #f44336;
+}
+
+.copilot-status.loading .status-text {
+  color: #666;
+}
+
+.copilot-auth-code {
+  text-align: center;
+  padding: 16px;
+}
+
+.copilot-auth-code p {
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.copilot-auth-code a {
+  color: #0078d4;
+  font-weight: 500;
+}
+
+.user-code {
+  font-family: monospace;
+  font-size: 28px;
+  font-weight: bold;
+  letter-spacing: 4px;
+  background: #fff;
+  border: 2px dashed #0078d4;
+  border-radius: 8px;
+  padding: 16px 24px;
+  margin: 16px 0;
+  color: #0078d4;
+  user-select: all;
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #e0e0e0;
+  border-top-color: #0078d4;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 12px auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+#btn-copilot-signin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  background: #24292e;
+}
+
+#btn-copilot-signin:hover {
+  background: #1b1f23;
+}
+
+.copilot-auth-section .btn-danger {
+  margin-top: 8px;
+}

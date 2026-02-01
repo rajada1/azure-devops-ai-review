@@ -31,11 +31,8 @@ async function loadData() {
       document.getElementById('azure-token').value = '••••••••••••••••';
     }
 
-    // Load GitHub token
-    const githubTokenResult = await chrome.runtime.sendMessage({ type: 'GET_GITHUB_TOKEN' });
-    if (githubTokenResult.token) {
-      document.getElementById('github-token').value = '••••••••••••••••';
-    }
+    // Check Copilot auth status
+    await updateCopilotAuthUI();
 
     // Load language setting
     if (settings.language) {
@@ -79,9 +76,6 @@ function setupEventListeners() {
 
   // Save Azure token
   document.getElementById('btn-save-token').addEventListener('click', saveAzureToken);
-
-  // Save GitHub token
-  document.getElementById('btn-save-github-token').addEventListener('click', saveGitHubToken);
 
   // Language change
   document.getElementById('review-language').addEventListener('change', (e) => {
@@ -210,6 +204,23 @@ function onProviderSelect(e) {
     return;
   }
 
+  // GitHub Copilot uses OAuth, not the form
+  if (providerId === 'github-copilot') {
+    form.innerHTML = `
+      <div class="provider-instructions">
+        <p><strong>GitHub Copilot</strong></p>
+        <p>Use the "Sign in with GitHub" button in the Settings tab to authenticate.</p>
+        <p>After signing in, Copilot will be automatically added as a provider.</p>
+      </div>
+      <button class="btn" id="btn-goto-settings">Go to Settings</button>
+    `;
+    form.classList.remove('hidden');
+    document.getElementById('btn-goto-settings').addEventListener('click', () => {
+      document.querySelector('[data-tab="settings"]').click();
+    });
+    return;
+  }
+
   const provider = availableProviders.find(p => p.id === providerId);
   if (!provider) return;
 
@@ -255,16 +266,10 @@ function onProviderSelect(e) {
     
     // API Key field
     if (provider.requiresApiKey) {
-      const keyLabel = providerId === 'github-copilot' ? 'GitHub Token' : 'API Key';
-      const keyPlaceholder = providerId === 'github-copilot' 
-        ? 'ghp_xxxxxxxxxxxx' 
-        : 'Enter API key';
-      
       html += `
         <div class="form-field">
-          <label for="provider-apikey">${keyLabel}</label>
-          <input type="password" id="provider-apikey" placeholder="${keyPlaceholder}" required>
-          ${providerId === 'github-copilot' ? '<button class="btn btn-small" id="btn-load-models" type="button">Load Models</button>' : ''}
+          <label for="provider-apikey">API Key</label>
+          <input type="password" id="provider-apikey" placeholder="Enter API key" required>
         </div>
       `;
     }
@@ -279,17 +284,8 @@ function onProviderSelect(e) {
       `;
     }
 
-    // Model select - for GitHub Copilot, show placeholder until models are loaded
-    if (providerId === 'github-copilot') {
-      html += `
-        <div class="form-field" id="model-field">
-          <label for="provider-model">Model</label>
-          <select id="provider-model" disabled>
-            <option value="">Enter token and click "Load Models"</option>
-          </select>
-        </div>
-      `;
-    } else if (provider.availableModels.length > 0) {
+    // Model select
+    if (provider.availableModels.length > 0) {
       html += `
         <div class="form-field">
         <label for="provider-model">Model</label>
@@ -305,7 +301,7 @@ function onProviderSelect(e) {
 
   html += `
     <div class="form-field">
-      <button class="btn" id="btn-add-provider" ${providerId === 'github-copilot' ? 'disabled' : ''}>Add Provider</button>
+      <button class="btn" id="btn-add-provider">Add Provider</button>
       <button class="btn btn-secondary" id="btn-test-provider">Test</button>
     </div>
   `;
@@ -316,73 +312,6 @@ function onProviderSelect(e) {
   // Event listeners
   document.getElementById('btn-add-provider').addEventListener('click', () => addProvider(providerId));
   document.getElementById('btn-test-provider').addEventListener('click', () => testNewProvider(providerId));
-  
-  // GitHub Copilot: load saved token and setup load models button
-  if (providerId === 'github-copilot') {
-    document.getElementById('btn-load-models').addEventListener('click', loadGitHubModels);
-    
-    // Try to load saved GitHub token
-    loadSavedGitHubToken();
-  }
-}
-
-async function loadSavedGitHubToken() {
-  try {
-    const result = await chrome.runtime.sendMessage({ type: 'GET_GITHUB_TOKEN' });
-    if (result.token) {
-      const tokenInput = document.getElementById('provider-apikey');
-      if (tokenInput) {
-        tokenInput.value = result.token;
-        // Auto-load models if token exists
-        loadGitHubModels();
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load saved GitHub token:', error);
-  }
-}
-
-async function loadGitHubModels() {
-  const tokenInput = document.getElementById('provider-apikey');
-  const token = tokenInput.value.trim();
-  
-  if (!token) {
-    showToast('Please enter your GitHub token first', 'error');
-    return;
-  }
-
-  const loadBtn = document.getElementById('btn-load-models');
-  const modelSelect = document.getElementById('provider-model');
-  const addBtn = document.getElementById('btn-add-provider');
-  
-  loadBtn.disabled = true;
-  loadBtn.textContent = 'Loading...';
-  modelSelect.innerHTML = '<option value="">Loading models...</option>';
-
-  try {
-    const result = await chrome.runtime.sendMessage({
-      type: 'FETCH_GITHUB_MODELS',
-      token
-    });
-
-    if (result.success && result.models.length > 0) {
-      modelSelect.innerHTML = result.models.map(m => 
-        `<option value="${m.id}">${m.name}${m.description ? ` - ${m.description}` : ''}</option>`
-      ).join('');
-      modelSelect.disabled = false;
-      addBtn.disabled = false;
-      showToast(`Loaded ${result.models.length} models`, 'success');
-    } else {
-      modelSelect.innerHTML = '<option value="">No models found</option>';
-      showToast(result.error || 'No models available', 'error');
-    }
-  } catch (error) {
-    modelSelect.innerHTML = '<option value="">Error loading models</option>';
-    showToast('Failed to load models', 'error');
-  } finally {
-    loadBtn.disabled = false;
-    loadBtn.textContent = 'Load Models';
-  }
 }
 
 async function addProvider(providerId) {
@@ -548,24 +477,224 @@ async function saveAzureToken() {
   }
 }
 
-async function saveGitHubToken() {
-  const input = document.getElementById('github-token');
-  const token = input.value;
+// ========== COPILOT AUTHENTICATION ==========
 
-  if (!token || token === '••••••••••••••••') {
-    showToast('Please enter a token', 'error');
+let copilotAuthPolling = false;
+
+async function updateCopilotAuthUI() {
+  const section = document.getElementById('copilot-auth-section');
+  
+  try {
+    const status = await chrome.runtime.sendMessage({ type: 'COPILOT_GET_STATUS' });
+    
+    if (status.authenticated && status.hasSubscription) {
+      section.innerHTML = `
+        <div class="copilot-status authenticated">
+          <span class="status-icon">✅</span>
+          <span class="status-text">Connected to GitHub Copilot</span>
+        </div>
+        <button class="btn btn-small btn-danger" id="btn-copilot-signout">Sign Out</button>
+      `;
+      document.getElementById('btn-copilot-signout').addEventListener('click', signOutCopilot);
+    } else if (status.authenticated && !status.hasSubscription) {
+      section.innerHTML = `
+        <div class="copilot-status warning">
+          <span class="status-icon">⚠️</span>
+          <span class="status-text">No active Copilot subscription</span>
+        </div>
+        <p class="help-text">Your GitHub account doesn't have an active Copilot subscription.</p>
+        <button class="btn btn-small" id="btn-copilot-retry">Retry</button>
+        <button class="btn btn-small btn-secondary" id="btn-copilot-signout">Sign Out</button>
+      `;
+      document.getElementById('btn-copilot-retry').addEventListener('click', updateCopilotAuthUI);
+      document.getElementById('btn-copilot-signout').addEventListener('click', signOutCopilot);
+    } else {
+      section.innerHTML = `
+        <div class="copilot-status">
+          <span class="status-icon">🔑</span>
+          <span class="status-text">Not signed in</span>
+        </div>
+        <button class="btn" id="btn-copilot-signin">
+          <span>🐙</span> Sign in with GitHub
+        </button>
+        <p class="help-text">
+          Requires an active <a href="https://github.com/features/copilot" target="_blank">GitHub Copilot</a> subscription.
+        </p>
+      `;
+      document.getElementById('btn-copilot-signin').addEventListener('click', startCopilotSignIn);
+    }
+  } catch (error) {
+    console.error('Failed to get Copilot status:', error);
+    section.innerHTML = `
+      <div class="copilot-status error">
+        <span class="status-icon">❌</span>
+        <span class="status-text">Error checking status</span>
+      </div>
+      <button class="btn btn-small" id="btn-copilot-retry">Retry</button>
+    `;
+    document.getElementById('btn-copilot-retry').addEventListener('click', updateCopilotAuthUI);
+  }
+}
+
+async function startCopilotSignIn() {
+  const section = document.getElementById('copilot-auth-section');
+  
+  section.innerHTML = `
+    <div class="copilot-status loading">
+      <span class="status-icon">⏳</span>
+      <span class="status-text">Starting authentication...</span>
+    </div>
+  `;
+
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'COPILOT_START_AUTH' });
+    
+    if (!result.success) {
+      throw new Error(result.error);
+    }
+
+    // Show the code to user
+    section.innerHTML = `
+      <div class="copilot-auth-code">
+        <p>1. Go to <a href="${result.verificationUri}" target="_blank">${result.verificationUri}</a></p>
+        <p>2. Enter this code:</p>
+        <div class="user-code" id="copilot-user-code">${result.userCode}</div>
+        <button class="btn btn-small" id="btn-copy-code">📋 Copy Code</button>
+        <p class="help-text">Waiting for authorization...</p>
+        <div class="spinner"></div>
+      </div>
+      <button class="btn btn-small btn-secondary" id="btn-cancel-auth">Cancel</button>
+    `;
+
+    document.getElementById('btn-copy-code').addEventListener('click', () => {
+      navigator.clipboard.writeText(result.userCode);
+      showToast('Code copied!', 'success');
+    });
+
+    document.getElementById('btn-cancel-auth').addEventListener('click', () => {
+      copilotAuthPolling = false;
+      updateCopilotAuthUI();
+    });
+
+    // Open the verification URL
+    chrome.tabs.create({ url: result.verificationUri });
+
+    // Start polling
+    copilotAuthPolling = true;
+    pollForAuth(result.deviceCode, result.interval);
+
+  } catch (error) {
+    console.error('Failed to start Copilot auth:', error);
+    section.innerHTML = `
+      <div class="copilot-status error">
+        <span class="status-icon">❌</span>
+        <span class="status-text">Authentication failed</span>
+      </div>
+      <p class="help-text">${error.message}</p>
+      <button class="btn btn-small" id="btn-copilot-retry">Try Again</button>
+    `;
+    document.getElementById('btn-copilot-retry').addEventListener('click', startCopilotSignIn);
+  }
+}
+
+async function pollForAuth(deviceCode, interval) {
+  if (!copilotAuthPolling) return;
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: 'COPILOT_POLL_AUTH',
+      deviceCode,
+      interval
+    });
+
+    if (result.success && result.authenticated) {
+      copilotAuthPolling = false;
+      showToast('Successfully signed in to GitHub Copilot!', 'success');
+      await updateCopilotAuthUI();
+      
+      // Auto-add Copilot as provider if not already added
+      await autoAddCopilotProvider();
+    } else if (result.error) {
+      copilotAuthPolling = false;
+      const section = document.getElementById('copilot-auth-section');
+      section.innerHTML = `
+        <div class="copilot-status error">
+          <span class="status-icon">❌</span>
+          <span class="status-text">Authentication failed</span>
+        </div>
+        <p class="help-text">${result.error}</p>
+        <button class="btn btn-small" id="btn-copilot-retry">Try Again</button>
+      `;
+      document.getElementById('btn-copilot-retry').addEventListener('click', startCopilotSignIn);
+    }
+  } catch (error) {
+    // Polling continues on network errors
+    console.warn('Auth poll error:', error);
+  }
+}
+
+async function autoAddCopilotProvider() {
+  // Check if Copilot provider already exists
+  const existingCopilot = configuredProviders.find(p => p.id === 'github-copilot');
+  if (existingCopilot) {
+    // Just set it as active
+    await chrome.runtime.sendMessage({
+      type: 'SET_ACTIVE_PROVIDER',
+      providerId: 'github-copilot'
+    });
+    await loadData();
+    updateUI();
     return;
   }
 
+  // Fetch available models
   try {
+    const modelsResult = await chrome.runtime.sendMessage({ type: 'COPILOT_FETCH_MODELS' });
+    const defaultModel = modelsResult.models?.find(m => m.isDefault)?.id || 'gpt-4o';
+
+    // Add Copilot provider with default model
     await chrome.runtime.sendMessage({
-      type: 'SAVE_GITHUB_TOKEN',
-      token
+      type: 'SAVE_PROVIDER',
+      provider: {
+        id: 'github-copilot',
+        model: defaultModel
+      }
     });
-    input.value = '••••••••••••••••';
-    showToast('GitHub token saved', 'success');
+
+    // Set as active
+    await chrome.runtime.sendMessage({
+      type: 'SET_ACTIVE_PROVIDER',
+      providerId: 'github-copilot'
+    });
+
+    await loadData();
+    updateUI();
+    showToast('GitHub Copilot configured as your AI provider', 'success');
   } catch (error) {
-    showToast('Failed to save token', 'error');
+    console.error('Failed to auto-add Copilot provider:', error);
+  }
+}
+
+async function signOutCopilot() {
+  try {
+    await chrome.runtime.sendMessage({ type: 'COPILOT_SIGN_OUT' });
+    
+    // Remove Copilot provider if it exists
+    const existingCopilot = configuredProviders.find(p => p.id === 'github-copilot');
+    if (existingCopilot) {
+      await chrome.runtime.sendMessage({
+        type: 'REMOVE_PROVIDER',
+        providerId: 'github-copilot'
+      });
+    }
+    
+    await loadData();
+    updateUI();
+    await updateCopilotAuthUI();
+    showToast('Signed out of GitHub Copilot', 'success');
+  } catch (error) {
+    console.error('Failed to sign out:', error);
+    showToast('Failed to sign out', 'error');
   }
 }
 
@@ -596,13 +725,6 @@ function showToast(message, type = 'info') {
 
 function getProviderInstructions(providerId) {
   const instructions = {
-    'github-copilot': `
-      <p><strong>Uses GitHub Models API</strong></p>
-      <p>Create a Personal Access Token at 
-        <a href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a>
-      </p>
-      <p>Required scope: <code>models:read</code></p>
-    `,
     'azure-openai': `
       <p><strong>Azure OpenAI Service</strong></p>
       <p>Supports Model Router and custom deployments.</p>

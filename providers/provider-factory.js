@@ -4,7 +4,6 @@ import { GeminiProvider } from './gemini.js';
 import { GitHubCopilotProvider } from './github-copilot.js';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
 import { AzureOpenAIProvider } from './azure-openai.js';
-import { ApiFreeProvider } from './api-free.js';
 
 /**
  * Provider Factory
@@ -17,7 +16,6 @@ export class ProviderFactory {
     [OpenAIProvider.id]: OpenAIProvider,
     [AnthropicProvider.id]: AnthropicProvider,
     [GeminiProvider.id]: GeminiProvider,
-    [ApiFreeProvider.id]: ApiFreeProvider,
     [OpenAICompatibleProvider.id]: OpenAICompatibleProvider
   };
 

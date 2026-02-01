@@ -1,8 +1,10 @@
 import { BaseProvider } from './base-provider.js';
+import { CopilotAuthService } from '../services/copilot-auth.js';
 
 /**
  * GitHub Copilot Provider
- * Uses GitHub Models API for users with GitHub Copilot subscription
+ * Uses GitHub Copilot Chat API (same as VS Code/Zed)
+ * Requires active GitHub Copilot subscription
  */
 export class GitHubCopilotProvider extends BaseProvider {
   static get id() {
@@ -14,11 +16,11 @@ export class GitHubCopilotProvider extends BaseProvider {
   }
 
   static get description() {
-    return 'Use your GitHub Copilot subscription (requires GitHub token with models scope)';
+    return 'Use your GitHub Copilot subscription (GPT-4o, Claude, Gemini and more)';
   }
 
   static get requiresApiKey() {
-    return true; // GitHub Personal Access Token
+    return false; // Uses OAuth flow instead
   }
 
   static get supportsCustomUrl() {
@@ -26,145 +28,76 @@ export class GitHubCopilotProvider extends BaseProvider {
   }
 
   static get availableModels() {
-    // Default models - will be replaced by dynamic fetch
+    // Default models - will be replaced by dynamic fetch after auth
     return [
-      { id: 'openai/gpt-4o', name: 'GPT-4o', description: 'Loading models...' }
+      { id: 'gpt-4o', name: 'GPT-4o', description: 'Default model' }
     ];
   }
 
   /**
-   * Get standard headers for GitHub Models API
-   * @private
-   */
-  static _getHeaders(token) {
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Content-Type': 'application/json'
-    };
-  }
-
-  /**
-   * Fetch available models from GitHub Models API
-   * @param {string} token - GitHub Personal Access Token
+   * Fetch available models from Copilot API
    * @returns {Promise<Array<{id: string, name: string, description: string}>>}
    */
-  static async fetchAvailableModels(token) {
+  static async fetchAvailableModels() {
     try {
-      const response = await fetch('https://models.github.ai/catalog/models', {
-        method: 'GET',
-        headers: GitHubCopilotProvider._getHeaders(token)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('GitHub Models API error:', response.status, errorText);
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
-      return GitHubCopilotProvider._parseModelsResponse(data);
+      return await CopilotAuthService.fetchModels();
     } catch (error) {
-      console.error('Failed to fetch GitHub models:', error);
+      console.error('Failed to fetch Copilot models:', error);
       // Return default models on error
       return [
-        { id: 'openai/gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal' },
-        { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and efficient' },
-        { id: 'openai/gpt-4.1', name: 'GPT-4.1', description: 'Latest GPT-4.1' },
-        { id: 'openai/o1', name: 'o1', description: 'Advanced reasoning' },
-        { id: 'openai/o3-mini', name: 'o3 Mini', description: 'Fast reasoning' },
-        { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', description: 'Reasoning model' },
-        { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', description: 'Meta Llama' }
+        { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable, multimodal', isDefault: true },
+        { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and efficient' },
+        { id: 'claude-sonnet-4', name: 'Claude Sonnet 4', description: 'Anthropic' },
+        { id: 'claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', description: 'Anthropic' },
+        { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Google' },
+        { id: 'o3-mini', name: 'o3 Mini', description: 'Fast reasoning' }
       ];
     }
   }
 
-  /**
-   * Parse models response from GitHub API
-   * @private
-   */
-  static _parseModelsResponse(data) {
-    // Handle array response
-    const models = Array.isArray(data) ? data : (data.models || data.data || []);
-    
-    // Filter out embedding models - only keep text generation models
-    const textModels = models.filter(model => {
-      const outputModalities = model.supported_output_modalities || [];
-      return outputModalities.includes('text') && !outputModalities.includes('embeddings');
-    });
-
-    return textModels
-      .map(model => ({
-        id: model.id,
-        name: model.name || model.id,
-        description: model.summary || ''
-      }))
-      .sort((a, b) => {
-        // Prioritize popular models
-        const priority = ['gpt-4o', 'gpt-4.1', 'gpt-5', 'o1', 'o3', 'o4', 'claude', 'deepseek', 'llama'];
-        const aPriority = priority.findIndex(p => a.id.toLowerCase().includes(p));
-        const bPriority = priority.findIndex(p => b.id.toLowerCase().includes(p));
-        if (aPriority !== -1 && bPriority === -1) return -1;
-        if (bPriority !== -1 && aPriority === -1) return 1;
-        if (aPriority !== bPriority) return aPriority - bPriority;
-        return a.name.localeCompare(b.name);
-      });
-  }
-
   constructor(config = {}) {
-    super({
-      baseUrl: 'https://models.github.ai',
-      ...config
-    });
+    super(config);
   }
 
   /**
-   * Get standard headers for API calls
+   * Test connection to Copilot API
    */
-  _getHeaders() {
-    return {
-      'Authorization': `Bearer ${this.config.apiKey}`,
-      'Accept': 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Content-Type': 'application/json'
-    };
-  }
-
   async testConnection() {
     try {
-      // Test with a minimal request
-      const response = await fetch('https://models.github.ai/inference/chat/completions', {
+      const status = await CopilotAuthService.getAuthStatus();
+      
+      if (!status.authenticated) {
+        return {
+          success: false,
+          error: 'Not signed in. Click "Sign in with GitHub" to authenticate.'
+        };
+      }
+
+      if (!status.hasSubscription) {
+        return {
+          success: false,
+          error: status.error || 'No active Copilot subscription found.'
+        };
+      }
+
+      // Try a minimal request to verify
+      const credentials = await CopilotAuthService.getValidCredentials();
+      
+      const response = await fetch(`${credentials.endpoint}/chat/completions`, {
         method: 'POST',
-        headers: this._getHeaders(),
+        headers: await CopilotAuthService.getApiHeaders(),
         body: JSON.stringify({
-          model: this.config.model || 'openai/gpt-4o-mini',
+          model: this.config.model || 'gpt-4o',
           messages: [{ role: 'user', content: 'Hi' }],
           max_tokens: 5
         })
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        
-        // Check for specific GitHub errors
-        if (response.status === 401) {
-          return {
-            success: false,
-            error: 'Invalid GitHub token. Make sure you have a valid Personal Access Token with "models" scope.'
-          };
-        }
-        
-        if (response.status === 403) {
-          return {
-            success: false,
-            error: 'Access denied. Ensure your token has the "models" scope enabled.'
-          };
-        }
-        
+        const error = await response.text();
         return {
           success: false,
-          error: error.error?.message || error.message || `HTTP ${response.status}`
+          error: `API error: ${error}`
         };
       }
 
@@ -184,11 +117,22 @@ export class GitHubCopilotProvider extends BaseProvider {
     const userMessage = this._buildUserMessage(patchContent, prTitle, prDescription);
 
     try {
-      const response = await fetch('https://models.github.ai/inference/chat/completions', {
+      const credentials = await CopilotAuthService.getValidCredentials();
+      
+      if (!credentials) {
+        return {
+          success: false,
+          error: 'Not authenticated. Please sign in with GitHub Copilot.',
+          provider: GitHubCopilotProvider.id,
+          model: this.config.model
+        };
+      }
+
+      const response = await fetch(`${credentials.endpoint}/chat/completions`, {
         method: 'POST',
-        headers: this._getHeaders(),
+        headers: await CopilotAuthService.getApiHeaders(),
         body: JSON.stringify({
-          model: this.config.model,
+          model: this.config.model || 'gpt-4o',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }
@@ -199,8 +143,14 @@ export class GitHubCopilotProvider extends BaseProvider {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error?.message || error.message || `HTTP ${response.status}`);
+        const errorText = await response.text();
+        let errorData = {};
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          errorData = { message: errorText };
+        }
+        throw new Error(errorData.error?.message || errorData.message || `HTTP ${response.status}`);
       }
 
       const data = await response.json();
@@ -228,11 +178,17 @@ export class GitHubCopilotProvider extends BaseProvider {
     ];
 
     try {
-      const response = await fetch('https://models.github.ai/inference/chat/completions', {
+      const credentials = await CopilotAuthService.getValidCredentials();
+      
+      if (!credentials) {
+        throw new Error('Not authenticated. Please sign in with GitHub Copilot.');
+      }
+
+      const response = await fetch(`${credentials.endpoint}/chat/completions`, {
         method: 'POST',
-        headers: this._getHeaders(),
+        headers: await CopilotAuthService.getApiHeaders(),
         body: JSON.stringify({
-          model: this.config.model,
+          model: this.config.model || 'gpt-4o',
           messages,
           temperature: 0.3,
           max_tokens: 2000

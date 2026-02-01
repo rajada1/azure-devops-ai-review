@@ -2,11 +2,12 @@
 
 🤖 AI-powered code reviews for Azure DevOps Pull Requests.
 
-Connect your preferred AI model (OpenAI, Anthropic, Ollama, etc.) and get instant, intelligent code reviews directly in your PRs.
+Connect your GitHub Copilot subscription or preferred AI provider and get instant, intelligent code reviews directly in your PRs.
 
 ## ✨ Features
 
-- **Multi-Provider Support**: Connect OpenAI, Anthropic Claude, Google Gemini, or any OpenAI-compatible API
+- **GitHub Copilot Integration**: Use your existing Copilot subscription with GPT-4o, Claude, Gemini and more
+- **Multi-Provider Support**: Also supports OpenAI, Anthropic Claude, Google Gemini, Azure OpenAI
 - **Instant Reviews**: Get AI-driven insights on code changes
 - **Security Detection**: Automatically identify potential vulnerabilities
 - **Code Quality**: Receive suggestions for improvements
@@ -17,20 +18,30 @@ Connect your preferred AI model (OpenAI, Anthropic, Ollama, etc.) and get instan
 ## 🚀 Quick Start
 
 1. Install the extension
-2. Click the extension icon and go to Settings
-3. Add your preferred AI provider (API key required for cloud providers)
+2. Click the extension icon and go to **Settings**
+3. Click **"Sign in with GitHub"** to connect your Copilot subscription
 4. Navigate to any Azure DevOps Pull Request
-5. Click "AI Review" to get instant feedback
+5. Click **"AI Review"** to get instant feedback
 
 ## 🔧 Supported AI Providers
 
 | Provider | Models | Setup |
 |----------|--------|-------|
-| **GitHub Copilot** | GPT-4o, Claude 3.5, o1 | GitHub Token (requires Copilot subscription) |
+| **GitHub Copilot** ⭐ | GPT-4o, Claude Sonnet 4, Gemini 2.0, o3-mini | OAuth Sign-in (requires Copilot subscription) |
+| Azure OpenAI | GPT-4o, GPT-4 Turbo, Custom deployments | API Key + Endpoint |
 | OpenAI | GPT-4o, GPT-4 Turbo, GPT-3.5 | API Key |
 | Anthropic | Claude Sonnet 4, Claude 3.5, Claude 3 Opus | API Key |
 | Google | Gemini 2.0 Flash, Gemini 1.5 Pro | API Key |
-| OpenAI-Compatible | Any compatible API (Azure OpenAI, etc.) | Custom endpoint + API Key |
+| OpenAI-Compatible | Any compatible API | Custom endpoint + API Key |
+
+### GitHub Copilot Setup
+
+The easiest way to get started! If you have a GitHub Copilot subscription:
+
+1. Go to **Settings** tab in the extension
+2. Click **"Sign in with GitHub"**
+3. Authorize the app on GitHub.com
+4. Done! You now have access to all Copilot models
 
 ## 🏗️ Architecture
 
@@ -44,19 +55,20 @@ azure-devops-ai-review/
 │   └── popup.css
 ├── content/                # Content scripts for Azure DevOps
 │   ├── content.js
-│   ├── content.css
-│   └── ui/                 # UI components
+│   └── content.css
 ├── providers/              # AI provider implementations
 │   ├── base-provider.js    # Abstract base class
+│   ├── github-copilot.js   # GitHub Copilot (OAuth)
 │   ├── openai.js
 │   ├── anthropic.js
 │   ├── gemini.js
-│   ├── ollama.js
-│   └── provider-factory.js # Provider factory
+│   ├── azure-openai.js
+│   ├── openai-compatible.js
+│   └── provider-factory.js
 ├── services/               # Core services
-│   ├── azure-devops-api.js # Azure DevOps API client
+│   ├── copilot-auth.js     # Copilot OAuth authentication
 │   ├── config.js           # Configuration management
-│   └── review-service.js   # Review orchestration
+│   └── ...
 └── icons/                  # Extension icons
 ```
 
@@ -64,6 +76,7 @@ azure-devops-ai-review/
 
 - **No Data Collection**: We don't collect or store your code
 - **Direct API Calls**: Code is sent directly to your chosen AI provider
+- **OAuth Authentication**: Secure GitHub OAuth flow for Copilot
 - **Local Storage**: Settings stored locally in your browser
 - **Open Source**: Full transparency in how the extension works
 
