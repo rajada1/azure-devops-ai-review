@@ -517,14 +517,49 @@ async function updateCopilotAuthUI() {
     const status = await chrome.runtime.sendMessage({ type: 'COPILOT_GET_STATUS' });
     
     if (status.authenticated && status.hasSubscription) {
+      // Fetch available models
+      let modelsHtml = '';
+      try {
+        const modelsResult = await chrome.runtime.sendMessage({ type: 'COPILOT_FETCH_MODELS' });
+        if (modelsResult.success && modelsResult.models?.length > 0) {
+          // Get current model from provider config
+          const copilotProvider = configuredProviders.find(p => p.id === 'github-copilot');
+          const currentModel = copilotProvider?.model || 'gpt-4o';
+          
+          modelsHtml = `
+            <div class="form-field" style="margin-top: 12px;">
+              <label for="copilot-model">Model</label>
+              <select id="copilot-model">
+                ${modelsResult.models.map(m => `
+                  <option value="${m.id}" ${m.id === currentModel ? 'selected' : ''}>
+                    ${m.name}${m.isDefault ? ' (default)' : ''}
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+          `;
+        }
+      } catch (e) {
+        console.warn('Failed to fetch Copilot models:', e);
+      }
+      
       section.innerHTML = `
         <div class="copilot-status authenticated">
           <span class="status-icon">✅</span>
           <span class="status-text">Connected to GitHub Copilot</span>
         </div>
-        <button class="btn btn-small btn-danger" id="btn-copilot-signout">Sign Out</button>
+        ${modelsHtml}
+        <button class="btn btn-small btn-danger" id="btn-copilot-signout" style="margin-top: 12px;">Sign Out</button>
       `;
       document.getElementById('btn-copilot-signout').addEventListener('click', signOutCopilot);
+      
+      // Model change handler
+      const modelSelect = document.getElementById('copilot-model');
+      if (modelSelect) {
+        modelSelect.addEventListener('change', async (e) => {
+          await saveCopilotModel(e.target.value);
+        });
+      }
     } else if (status.authenticated && !status.hasSubscription) {
       section.innerHTML = `
         <div class="copilot-status warning">
@@ -698,6 +733,32 @@ async function signOutCopilot() {
   } catch (error) {
     console.error('Failed to sign out:', error);
     showToast('Failed to sign out', 'error');
+  }
+}
+
+async function saveCopilotModel(model) {
+  try {
+    // Update or create the Copilot provider with new model
+    await chrome.runtime.sendMessage({
+      type: 'SAVE_PROVIDER',
+      provider: {
+        id: 'github-copilot',
+        model: model
+      }
+    });
+    
+    // Make sure it's the active provider
+    await chrome.runtime.sendMessage({
+      type: 'SET_ACTIVE_PROVIDER',
+      providerId: 'github-copilot'
+    });
+    
+    await loadData();
+    updateUI();
+    showToast(`Model changed to ${model}`, 'success');
+  } catch (error) {
+    console.error('Failed to save Copilot model:', error);
+    showToast('Failed to save model', 'error');
   }
 }
 
