@@ -192,6 +192,7 @@ async function performReview(patchContent, options = {}) {
     const reviewOptions = {
       language: settings.language || 'English',
       rules: rules,
+      maxTokens: settings.maxTokens || 16000,
       ...options
     };
 

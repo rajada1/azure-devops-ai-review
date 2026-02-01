@@ -44,6 +44,11 @@ async function loadData() {
     if (limitsResult.maxFiles) {
       document.getElementById('max-files').value = limitsResult.maxFiles;
     }
+
+    // Load max tokens setting
+    if (settings.maxTokens) {
+      document.getElementById('max-tokens').value = settings.maxTokens;
+    }
   } catch (error) {
     console.error('Failed to load data:', error);
     showToast('Failed to load settings', 'error');
@@ -85,6 +90,9 @@ function setupEventListeners() {
   // Save diff limits
   document.getElementById('btn-save-limits').addEventListener('click', saveDiffLimits);
 
+  // Save max tokens
+  document.getElementById('btn-save-tokens').addEventListener('click', saveMaxTokens);
+
   // Rules tab
   document.getElementById('btn-save-rules').addEventListener('click', saveRules);
 
@@ -104,6 +112,21 @@ async function saveDiffLimits() {
   } catch (error) {
     console.error('Failed to save limits:', error);
     showToast('Failed to save limits', 'error');
+  }
+}
+
+async function saveMaxTokens() {
+  const maxTokens = parseInt(document.getElementById('max-tokens').value);
+  
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'UPDATE_SETTINGS',
+      settings: { maxTokens }
+    });
+    showToast('Max tokens saved!', 'success');
+  } catch (error) {
+    console.error('Failed to save max tokens:', error);
+    showToast('Failed to save max tokens', 'error');
   }
 }
 

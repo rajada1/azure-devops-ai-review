@@ -213,6 +213,22 @@
       </div>
 
       <div class="settings-group">
+        <h3>AI Response Limits</h3>
+        <div class="form-field">
+          <label for="max-tokens">Max Response Tokens</label>
+          <select id="max-tokens">
+            <option value="4000">4,000 (Small PRs)</option>
+            <option value="8000">8,000 (Medium PRs)</option>
+            <option value="16000" selected>16,000 (Large PRs)</option>
+            <option value="32000">32,000 (Very Large PRs)</option>
+            <option value="64000">64,000 (Maximum)</option>
+          </select>
+          <p class="help-text">Higher values allow longer reviews but cost more. Increase if reviews are cut off.</p>
+        </div>
+        <button class="btn btn-small" id="btn-save-tokens">Save</button>
+      </div>
+
+      <div class="settings-group">
         <h3>About</h3>
         <p class="version">Version 1.0.0</p>
         <p class="help-text">

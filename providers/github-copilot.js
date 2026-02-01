@@ -111,7 +111,7 @@ export class GitHubCopilotProvider extends BaseProvider {
   }
 
   async reviewCode(patchContent, options = {}) {
-    const { language = 'English', prTitle = '', prDescription = '', rules = {} } = options;
+    const { language = 'English', prTitle = '', prDescription = '', rules = {}, maxTokens = 16000 } = options;
 
     const systemPrompt = this.buildReviewPrompt(language, rules);
     const userMessage = this._buildUserMessage(patchContent, prTitle, prDescription);
@@ -138,7 +138,7 @@ export class GitHubCopilotProvider extends BaseProvider {
           { role: 'user', content: userMessage }
         ],
         temperature: 0.3,
-        max_tokens: 16000
+        max_tokens: maxTokens
       };
 
       // Add JSON response format for models that support it
