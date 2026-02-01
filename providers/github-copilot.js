@@ -138,7 +138,7 @@ export class GitHubCopilotProvider extends BaseProvider {
           { role: 'user', content: userMessage }
         ],
         temperature: 0.3,
-        max_tokens: 4000
+        max_tokens: 16000
       };
 
       // Add JSON response format for models that support it
