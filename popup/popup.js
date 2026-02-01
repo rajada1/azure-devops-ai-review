@@ -479,12 +479,41 @@ async function saveAzureToken() {
 
 // ========== COPILOT AUTHENTICATION ==========
 
-let copilotAuthPolling = false;
-
 async function updateCopilotAuthUI() {
   const section = document.getElementById('copilot-auth-section');
   
   try {
+    // First check if there's a pending auth
+    const pendingResult = await chrome.runtime.sendMessage({ type: 'COPILOT_GET_PENDING_AUTH' });
+    
+    if (pendingResult.pending) {
+      // Show the pending auth UI with the code
+      section.innerHTML = `
+        <div class="copilot-auth-code">
+          <p>1. Go to <a href="${pendingResult.verificationUri}" target="_blank">${pendingResult.verificationUri}</a></p>
+          <p>2. Enter this code:</p>
+          <div class="user-code" id="copilot-user-code">${pendingResult.userCode}</div>
+          <button class="btn btn-small" id="btn-copy-code">📋 Copy Code</button>
+          <p class="help-text">Waiting for authorization...</p>
+          <div class="spinner"></div>
+        </div>
+        <button class="btn btn-small btn-secondary" id="btn-cancel-auth">Cancel</button>
+      `;
+
+      document.getElementById('btn-copy-code').addEventListener('click', () => {
+        navigator.clipboard.writeText(pendingResult.userCode);
+        showToast('Code copied!', 'success');
+      });
+
+      document.getElementById('btn-cancel-auth').addEventListener('click', async () => {
+        await chrome.runtime.sendMessage({ type: 'COPILOT_CANCEL_AUTH' });
+        updateCopilotAuthUI();
+      });
+      
+      return;
+    }
+    
+    // Check if already authenticated
     const status = await chrome.runtime.sendMessage({ type: 'COPILOT_GET_STATUS' });
     
     if (status.authenticated && status.hasSubscription) {
@@ -553,7 +582,7 @@ async function startCopilotSignIn() {
       throw new Error(result.error);
     }
 
-    // Show the code to user
+    // Show the code to user (background is now polling)
     section.innerHTML = `
       <div class="copilot-auth-code">
         <p>1. Go to <a href="${result.verificationUri}" target="_blank">${result.verificationUri}</a></p>
@@ -571,17 +600,13 @@ async function startCopilotSignIn() {
       showToast('Code copied!', 'success');
     });
 
-    document.getElementById('btn-cancel-auth').addEventListener('click', () => {
-      copilotAuthPolling = false;
+    document.getElementById('btn-cancel-auth').addEventListener('click', async () => {
+      await chrome.runtime.sendMessage({ type: 'COPILOT_CANCEL_AUTH' });
       updateCopilotAuthUI();
     });
 
     // Open the verification URL
     chrome.tabs.create({ url: result.verificationUri });
-
-    // Start polling
-    copilotAuthPolling = true;
-    pollForAuth(result.deviceCode, result.interval);
 
   } catch (error) {
     console.error('Failed to start Copilot auth:', error);
@@ -597,41 +622,19 @@ async function startCopilotSignIn() {
   }
 }
 
-async function pollForAuth(deviceCode, interval) {
-  if (!copilotAuthPolling) return;
-
-  try {
-    const result = await chrome.runtime.sendMessage({
-      type: 'COPILOT_POLL_AUTH',
-      deviceCode,
-      interval
-    });
-
-    if (result.success && result.authenticated) {
-      copilotAuthPolling = false;
+// Listen for auth completion from background
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'COPILOT_AUTH_COMPLETE') {
+    if (message.success) {
       showToast('Successfully signed in to GitHub Copilot!', 'success');
-      await updateCopilotAuthUI();
-      
-      // Auto-add Copilot as provider if not already added
-      await autoAddCopilotProvider();
-    } else if (result.error) {
-      copilotAuthPolling = false;
-      const section = document.getElementById('copilot-auth-section');
-      section.innerHTML = `
-        <div class="copilot-status error">
-          <span class="status-icon">❌</span>
-          <span class="status-text">Authentication failed</span>
-        </div>
-        <p class="help-text">${result.error}</p>
-        <button class="btn btn-small" id="btn-copilot-retry">Try Again</button>
-      `;
-      document.getElementById('btn-copilot-retry').addEventListener('click', startCopilotSignIn);
+      updateCopilotAuthUI();
+      autoAddCopilotProvider();
+    } else {
+      showToast(`Authentication failed: ${message.error}`, 'error');
+      updateCopilotAuthUI();
     }
-  } catch (error) {
-    // Polling continues on network errors
-    console.warn('Auth poll error:', error);
   }
-}
+});
 
 async function autoAddCopilotProvider() {
   // Check if Copilot provider already exists

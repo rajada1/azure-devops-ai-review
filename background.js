@@ -73,6 +73,12 @@ async function handleMessage(message, sender) {
     case 'COPILOT_START_AUTH':
       return await startCopilotAuth();
 
+    case 'COPILOT_GET_PENDING_AUTH':
+      return await getPendingAuth();
+
+    case 'COPILOT_CANCEL_AUTH':
+      return await cancelPendingAuth();
+
     case 'COPILOT_POLL_AUTH':
       return await pollCopilotAuth(message.deviceCode, message.interval);
 
@@ -266,9 +272,28 @@ async function fetchGitHubModels(token) {
 
 // ========== COPILOT OAUTH AUTHENTICATION ==========
 
+// Store pending auth state
+let pendingAuth = null;
+
 async function startCopilotAuth() {
   try {
     const result = await CopilotAuthService.startDeviceFlow();
+    
+    // Save pending auth state
+    pendingAuth = {
+      userCode: result.userCode,
+      verificationUri: result.verificationUri,
+      deviceCode: result.deviceCode,
+      interval: result.interval,
+      expiresAt: Date.now() + (result.expiresIn * 1000)
+    };
+    
+    // Save to storage so popup can recover state
+    await chrome.storage.local.set({ copilot_pending_auth: pendingAuth });
+    
+    // Start background polling
+    startBackgroundPolling();
+    
     return {
       success: true,
       userCode: result.userCode,
@@ -285,12 +310,90 @@ async function startCopilotAuth() {
   }
 }
 
+async function startBackgroundPolling() {
+  if (!pendingAuth) return;
+  
+  const { deviceCode, interval, expiresAt } = pendingAuth;
+  
+  while (pendingAuth && Date.now() < expiresAt) {
+    await new Promise(resolve => setTimeout(resolve, interval * 1000));
+    
+    if (!pendingAuth) break; // Cancelled
+    
+    try {
+      const token = await CopilotAuthService.pollForOAuthToken(deviceCode, interval, 1); // Single attempt
+      
+      // Success! Get API token to verify subscription
+      const apiToken = await CopilotAuthService.getApiToken(token);
+      
+      // Clear pending state
+      pendingAuth = null;
+      await chrome.storage.local.remove('copilot_pending_auth');
+      
+      // Notify any open popups
+      chrome.runtime.sendMessage({ 
+        type: 'COPILOT_AUTH_COMPLETE', 
+        success: true,
+        hasSubscription: !!apiToken
+      }).catch(() => {}); // Ignore if no popup open
+      
+      return;
+    } catch (error) {
+      // Check if it's a terminal error vs just pending
+      if (error.message.includes('expired') || 
+          error.message.includes('denied') ||
+          error.message.includes('access_denied')) {
+        pendingAuth = null;
+        await chrome.storage.local.remove('copilot_pending_auth');
+        chrome.runtime.sendMessage({ 
+          type: 'COPILOT_AUTH_COMPLETE', 
+          success: false,
+          error: error.message 
+        }).catch(() => {});
+        return;
+      }
+      // Otherwise continue polling (authorization_pending)
+    }
+  }
+  
+  // Expired
+  if (pendingAuth) {
+    pendingAuth = null;
+    await chrome.storage.local.remove('copilot_pending_auth');
+  }
+}
+
+async function getPendingAuth() {
+  if (pendingAuth && Date.now() < pendingAuth.expiresAt) {
+    return { pending: true, ...pendingAuth };
+  }
+  
+  // Check storage
+  const stored = await chrome.storage.local.get('copilot_pending_auth');
+  if (stored.copilot_pending_auth && Date.now() < stored.copilot_pending_auth.expiresAt) {
+    pendingAuth = stored.copilot_pending_auth;
+    return { pending: true, ...pendingAuth };
+  }
+  
+  return { pending: false };
+}
+
+async function cancelPendingAuth() {
+  pendingAuth = null;
+  await chrome.storage.local.remove('copilot_pending_auth');
+  return { success: true };
+}
+
 async function pollCopilotAuth(deviceCode, interval) {
   try {
     const token = await CopilotAuthService.pollForOAuthToken(deviceCode, interval);
     
     // Verify we can get an API token (validates Copilot subscription)
     const apiToken = await CopilotAuthService.getApiToken(token);
+    
+    // Clear pending state
+    pendingAuth = null;
+    await chrome.storage.local.remove('copilot_pending_auth');
     
     return {
       success: true,
