@@ -128,18 +128,29 @@ export class GitHubCopilotProvider extends BaseProvider {
         };
       }
 
+      const model = this.config.model || 'gpt-4o';
+      
+      // Build request body
+      const requestBody = {
+        model: model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage }
+        ],
+        temperature: 0.3,
+        max_tokens: 4000
+      };
+
+      // Add JSON response format for models that support it
+      // GPT-4o and most OpenAI models support this
+      if (model.includes('gpt-4') || model.includes('gpt-3') || model.includes('o1') || model.includes('o3')) {
+        requestBody.response_format = { type: 'json_object' };
+      }
+
       const response = await fetch(`${credentials.endpoint}/chat/completions`, {
         method: 'POST',
         headers: await CopilotAuthService.getApiHeaders(),
-        body: JSON.stringify({
-          model: this.config.model || 'gpt-4o',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage }
-          ],
-          temperature: 0.3,
-          max_tokens: 4000
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
@@ -155,6 +166,23 @@ export class GitHubCopilotProvider extends BaseProvider {
 
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content || '';
+      
+      // Debug log
+      console.log('[AI Review] Copilot response:', {
+        model: this.config.model,
+        contentLength: content.length,
+        contentPreview: content.substring(0, 200)
+      });
+      
+      if (!content) {
+        console.error('[AI Review] Empty response from Copilot API:', data);
+        return {
+          success: false,
+          error: 'Empty response from API. The model may not have returned any content.',
+          provider: GitHubCopilotProvider.id,
+          model: this.config.model
+        };
+      }
       
       return this.parseReviewResponse(content);
     } catch (error) {
